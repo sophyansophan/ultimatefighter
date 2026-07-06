@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ult. Fighter">
+    
+    <title>Ultimate Fighter - MMA Promoter</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { 
+            background-color: #0f172a; 
+            color: #f8fafc; 
+            font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+            overflow: hidden; 
+        }
+        .glass-panel { 
+            background: rgba(30, 41, 59, 0.7); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255, 255, 255, 0.05); 
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .modal-overlay { 
+            background: rgba(2, 6, 23, 0.85); 
+            backdrop-filter: blur(5px); 
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Script PWA Setup (Manifest & Service Worker Builder) -->
+    <script>
+        // 1. Buat Ikon SVG Sederhana secara dinamis (Data URI)
+        const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#4f46e5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="200" fill="white">UF</text></svg>`;
+        const iconUrl = 'data:image/svg+xml;base64,' + btoa(iconSvg);
+
+        // 2. Buat file Manifest.json secara dinamis
+        const manifest = {
+            "name": "Ultimate Fighter Simulator",
+            "short_name": "Ult. Fighter",
+            "description": "MMA Promoter Simulator Game",
+            "start_url": "./",
+            "display": "standalone",
+            "background_color": "#0f172a",
+            "theme_color": "#0f172a",
+            "orientation": "portrait",
+            "icons": [
+                {
+                    "src": iconUrl,
+                    "sizes": "512x512",
+                    "type": "image/svg+xml",
+                    "purpose": "any maskable"
+                }
+            ]
+        };
+
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const manifestUrl = URL.createObjectURL(manifestBlob);
+        
+        // Suntikkan manifest ke <head>
+        const linkManifest = document.createElement('link');
+        linkManifest.rel = 'manifest';
+        linkManifest.href = manifestUrl;
+        document.head.appendChild(linkManifest);
+
+        // 3. Buat Service Worker secara dinamis
+        // Service worker dasar ini hanya memberikan respons "Ok" (Cache-first atau Network-first tidak efektif karena file ini dihasilkan secara dinamis, tapi cukup untuk memenuhi syarat "Bisa Diinstal")
+        const swCode = `
+            self.addEventListener('install', (event) => {
+                self.skipWaiting();
+            });
+            self.addEventListener('activate', (event) => {
+                event.waitUntil(clients.claim());
+            });
+            self.addEventListener('fetch', (event) => {
+                // Untuk lingkungan dinamis ini, biarkan browser menangani fetch normal.
+                // Jika ingin offline penuh, kita butuh file statis asli.
+            });
+        `;
+        const swBlob = new Blob([swCode], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(swBlob);
+
+        // Daftarkan Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register(swUrl)
+                    .then(registration => console.log('PWA ServiceWorker registered', registration.scope))
+                    .catch(err => console.log('PWA ServiceWorker registration failed: ', err));
+            });
+        }
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        const WEIGHT_CLASSES = ['Ringan', 'Menengah', 'Berat'];
+        const FIGHT_STYLES = ['Striker', 'Wrestler', 'BJJ', 'Kickboxer', 'Balanced', 'Muay Thai'];
+        const COUNTRIES = ['Indonesia', 'USA', 'Brazil', 'Russia', 'UK', 'Japan', 'Mexico', 'Australia', 'Nigeria', 'France'];
+        
+        const FIRST_NAMES = ['Budi', 'Agus', 'John', 'Mike', 'Ivan', 'Alex', 'Jose', 'Kenji', 'Tom', 'David', 'Anderson', 'Khabib', 'Conor', 'Israel', 'Kamaru'];
+        const LAST_NAMES = ['Santoso', 'Wijaya', 'Smith', 'Johnson', 'Ivanov', 'Silva', 'Gomez', 'Sato', 'Hardy', 'Gane', 'Nurmagomedov', 'McGregor', 'Adesanya', 'Usman'];
+        const NICKNAMES = ['The Lion', 'Bones', 'Iron', 'The Assassin', 'Pitbull', 'Flash', 'The Eagle', 'The Notorious', 'Rumble', 'Magic', 'Predator'];
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+        const randomItem = (arr) => arr[randomInt(0, arr.length - 1)];
+        
+        const calculateAge = (dob, currentYear) => currentYear - parseInt(dob.split('-')[0]);
+        const calculateOvr = (stats) => Math.round((stats.striking + stats.grappling + stats.stamina + stats.power) / 4);
+        
+        const getOvrColor = (ovr) => {
+            if(ovr >= 85) return 'text-amber-400';
+            if(ovr >= 75) return 'text-blue-400';
+            if(ovr >= 65) return 'text-emerald-400';
+            return 'text-slate-400';
+        };
+
+        const getInitials = (first, last) => `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+
+        const getFighterMomentum = (history) => {
+            if (!history || history.length === 0) return 0;
+            // Hanya ambil 5 pertandingan terakhir
+            const last5 = history.slice(-5);
+            // Jumlahkan momentumPoints yang direkam. Fallback ke basic +/- jika game dari save data lama
+            return last5.reduce((sum, h) => sum + (h.momentumPoints !== undefined ? h.momentumPoints : (h.result === 'W' ? 10 : -5)), 0);
+        };
+
+        const generateFighter = (weightClass, isRandom, customData, currentYear) => {
+            const id = generateId();
+            if (isRandom) {
+                const birthYear = currentYear - 18; // Selalu 18 tahun jika acak
+                return {
+                    id,
+                    firstName: randomItem(FIRST_NAMES),
+                    lastName: randomItem(LAST_NAMES),
+                    nickname: randomItem(NICKNAMES),
+                    country: randomItem(COUNTRIES),
+                    dob: `${birthYear}-01-01`,
+                    weightClass: weightClass,
+                    style: randomItem(FIGHT_STYLES),
+                    stats: {
+                        striking: randomInt(55, 85),
+                        grappling: randomInt(55, 85),
+                        stamina: randomInt(60, 85),
+                        power: randomInt(55, 90)
+                    },
+                    record: { wins: 0, losses: 0, draws: 0 },
+                    isRetired: false,
+                    titleWins: 0,
+                    titleDefenses: 0,
+                    currentStreak: 0,
+                    history: []
+                };
+            }
+            return {
+                id,
+                ...customData,
+                record: { wins: 0, losses: 0, draws: 0 },
+                isRetired: false,
+                titleWins: 0,
+                titleDefenses: 0,
+                currentStreak: 0,
+                history: []
+            };
+        };
+
+        const simulateMatch = (f1, f2, isTitleFight) => {
+            const score1 = (f1.stats.striking * 0.35) + (f1.stats.grappling * 0.25) + (f1.stats.stamina * 0.2) + (f1.stats.power * 0.2) + randomInt(0, 30);
+            const score2 = (f2.stats.striking * 0.35) + (f2.stats.grappling * 0.25) + (f2.stats.stamina * 0.2) + (f2.stats.power * 0.2) + randomInt(0, 30);
+            
+            let winnerId, loserId, method, round, time;
+            const maxRounds = isTitleFight ? 5 : 3;
+            
+            round = randomInt(1, maxRounds);
+            time = `${randomInt(0, 4)}:${randomInt(10, 59).toString().padStart(2, '0')}`;
+
+            if (score1 > score2 + 20) {
+                winnerId = f1.id; loserId = f2.id;
+                method = f1.stats.power > f1.stats.grappling ? 'KO/TKO' : 'Submission';
+            } else if (score2 > score1 + 20) {
+                winnerId = f2.id; loserId = f1.id;
+                method = f2.stats.power > f2.stats.grappling ? 'KO/TKO' : 'Submission';
+            } else {
+                winnerId = score1 > score2 ? f1.id : f2.id;
+                loserId = score1 > score2 ? f2.id : f1.id;
+                
+                // Jika tipis, bisa berakhir decision atau late finish
+                if (randomInt(0, 100) > 85) {
+                    const winner = winnerId === f1.id ? f1 : f2;
+                    method = winner.stats.power > winner.stats.grappling ? 'TKO' : 'Submission';
+                } else {
+                    const decisions = ['Decision (Unanimous)', 'Decision (Split)', 'Decision (Majority)'];
+                    method = randomItem(decisions);
+                    round = maxRounds;
+                    time = '5:00';
+                }
+            }
+
+            return { winnerId, loserId, method, round, time };
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('roster');
+            
+            const [gameState, setGameState] = useState({
+                currentYear: 2026,
+                currentWeek: 1,
+                ppvCount: 1,
+                fighters: [],
+                events: [],
+                history: [],
+                champions: { 'Ringan': null, 'Menengah': null, 'Berat': null },
+                rankings: { 'Ringan': [], 'Menengah': [], 'Berat': [] } 
+            });
+
+            const [modal, setModal] = useState(null); 
+            const [toast, setToast] = useState(null);
+            
+            // --- Fitur Tombol Install PWA Manual ---
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+            const [isInstallable, setIsInstallable] = useState(false);
+
+            useEffect(() => {
+                // Mendengarkan event beforeinstallprompt (aktif jika syarat PWA terpenuhi)
+                const handleBeforeInstallPrompt = (e) => {
+                    // Mencegah Chrome memunculkan prompt mini infobar secara otomatis
+                    e.preventDefault();
+                    // Simpan event sehingga bisa dipicu nanti.
+                    setDeferredPrompt(e);
+                    // Update UI (tampilkan tombol install)
+                    setIsInstallable(true);
+                };
+
+                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+                
+                // Jika sudah berhasil diinstal, sembunyikan tombol
+                window.addEventListener('appinstalled', () => {
+                    setIsInstallable(false);
+                    setDeferredPrompt(null);
+                    showToast("Aplikasi berhasil diinstal!", "success");
+                });
+
+                return () => {
+                    window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+                };
+            }, []);
+
+            const handleInstallClick = async () => {
+                if (!deferredPrompt) return;
+                // Tampilkan prompt instalasi
+                deferredPrompt.prompt();
+                // Tunggu pengguna merespons prompt
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    console.log('User accepted the install prompt');
+                } else {
+                    console.log('User dismissed the install prompt');
+                }
+                // Hapus event (hanya bisa digunakan sekali)
+                setDeferredPrompt(null);
+                setIsInstallable(false);
+            };
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [activeTab, modal, gameState, toast, isInstallable]);
+
+            const showToast = (msg, type = 'success') => {
+                setToast({ msg, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            const addFighter = (fighter) => {
+                setGameState(prev => ({ ...prev, fighters: [...prev.fighters, fighter] }));
+                showToast('Fighter berhasil ditambahkan!');
+                setModal(null);
+            };
+
+            const editFighter = (updatedFighter) => {
+                setGameState(prev => ({
+                    ...prev,
+                    fighters: prev.fighters.map(f => f.id === updatedFighter.id ? updatedFighter : f)
+                }));
+                showToast('Data fighter berhasil diperbarui!');
+                setModal({ type: 'fighterDetail', data: updatedFighter });
+            };
+
+            const retireFighter = (fighterId) => {
+                let isDeleted = false;
+                setGameState(prev => {
+                    const targetFighter = prev.fighters.find(f => f.id === fighterId);
+                    const totalFights = targetFighter.history.length;
+                    
+                    let newChamps = { ...prev.champions };
+                    let newRanks = { ...prev.rankings };
+
+                    // Copot gelar & keluarkan dari ranking
+                    if (newChamps[targetFighter.weightClass] === fighterId) {
+                        newChamps[targetFighter.weightClass] = null;
+                    }
+                    newRanks[targetFighter.weightClass] = newRanks[targetFighter.weightClass].filter(id => id !== fighterId);
+
+                    let newFighters;
+                    if (totalFights < 5) {
+                        // Hapus permanen jika laga kurang dari 5
+                        newFighters = prev.fighters.filter(f => f.id !== fighterId);
+                        isDeleted = true;
+                    } else {
+                        // Pensiun normal & masuk sejarah
+                        newFighters = prev.fighters.map(f => f.id === fighterId ? { ...f, isRetired: true } : f);
+                    }
+
+                    return { ...prev, fighters: newFighters, champions: newChamps, rankings: newRanks };
+                });
+                
+                setTimeout(() => {
+                    if(isDeleted) showToast('Fighter dihapus permanen (< 5 laga).', 'success');
+                    else showToast('Fighter resmi gantung sarung tangan.', 'success');
+                }, 100);
+                
+                setModal(null);
+            };
+
+            const addEvent = (eventData) => {
+                const newEvent = { id: generateId(), ...eventData, matches: [], name: '' };
+                setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
+                setModal(null);
+                showToast('Jadwal acara berhasil dibuat!');
+            };
+
+            const deleteEvent = (eventId) => {
+                setGameState(prev => ({ ...prev, events: prev.events.filter(e => e.id !== eventId) }));
+                showToast('Acara dibatalkan.', 'error');
+            };
+
+            const addMatch = (eventId, matchData) => {
+                setGameState(prev => {
+                    const newEvents = [...prev.events];
+                    const eventIndex = newEvents.findIndex(e => e.id === eventId);
+                    const evt = newEvents[eventIndex];
+                    
+                    const newMatch = { id: generateId(), ...matchData, result: null };
+                    evt.matches.push(newMatch);
+
+                    // Update main event name if it's the first match
+                    if (evt.matches.length === 1) {
+                        const f1 = prev.fighters.find(f => f.id === matchData.f1Id);
+                        const f2 = prev.fighters.find(f => f.id === matchData.f2Id);
+                        if (evt.type === 'Fight Week') {
+                            evt.name = `Fight Week ${evt.week} ${evt.year} ${f1.lastName} vs ${f2.lastName}`;
+                        } else {
+                            evt.name = `Fighter Ultimate ${prev.ppvCount} ${f1.lastName} vs ${f2.lastName}`;
+                        }
+                    }
+                    return { ...prev, events: newEvents };
+                });
+                setModal(null);
+                showToast('Pertandingan berhasil masuk card!');
+            };
+
+            const processRankings = (winner, loser, weightClass, isTitleFight, prevRanks, prevChamps, currentFighters) => {
+            let newChamps = { ...prevChamps };
+            let newRanksList = [...prevRanks[weightClass]];
+
+            if (isTitleFight) {
+                if (winner.id !== prevChamps[weightClass]) {
+                    const oldChampId = prevChamps[weightClass];
+                    newChamps[weightClass] = winner.id;
+                    newRanksList = newRanksList.filter(id => id !== winner.id);
+                    if (oldChampId) newRanksList.unshift(oldChampId); // Juara lama tergeser ke peringkat 1
+                }
+            } else {
+                const winnerIdx = newRanksList.indexOf(winner.id);
+                let loserIdx = newRanksList.indexOf(loser.id);
+
+                if (winnerIdx === -1 && loserIdx !== -1) {
+                    // Unranked menang lawan Ranked -> Ambil persis posisi lawannya
+                    newRanksList.splice(loserIdx, 0, winner.id);
+                } else if (winnerIdx !== -1 && loserIdx !== -1 && winnerIdx > loserIdx) {
+                    // Ranking Bawah (#8) menang lawan Ranking Atas (#3)
+                    newRanksList.splice(winnerIdx, 1);
+                    newRanksList.splice(loserIdx, 0, winner.id);
+                } else if (winnerIdx !== -1 && loserIdx !== -1 && winnerIdx < loserIdx) {
+                    // Ranking Atas (#5) menang lawan Ranking Bawah (#6)
+                    if (winnerIdx > 0) {
+                        const guyAboveId = newRanksList[winnerIdx - 1];
+                        const guyAbove = currentFighters.find(f => f.id === guyAboveId);
+                        if (guyAbove) {
+                            const guyAboveMomentum = getFighterMomentum(guyAbove.history);
+                            const winnerMomentum = getFighterMomentum(winner.history);
+                            // Cek jika petarung yang ranknya di atasnya kalah momentum
+                            if (guyAboveMomentum < winnerMomentum && guyAboveMomentum < 0) {
+                                // Bertukar posisi, petarung yg di bawah menggeser petarung yg di atas
+                                newRanksList[winnerIdx - 1] = winner.id;
+                                newRanksList[winnerIdx] = guyAboveId;
+                            }
+                        }
+                    }
+                } else if (winnerIdx === -1 && loserIdx === -1) {
+                    // Sesama Unranked, jika slot sisa, letakkan di peringkat terakhir
+                    if(newRanksList.length < 10 && !newRanksList.includes(winner.id)) {
+                        newRanksList.push(winner.id);
+                    }
+                }
+            }
+
+            // Logika Gravitasi Momentum: Membandingkan pergeseran peringkat ke bawah
+            let swapped;
+            do {
+                swapped = false;
+                for (let i = 0; i < newRanksList.length - 1; i++) {
+                    const f1 = currentFighters.find(f => f.id === newRanksList[i]);
+                    const f2 = currentFighters.find(f => f.id === newRanksList[i+1]);
+                    
+                    if (f1 && f2) {
+                        const m1 = getFighterMomentum(f1.history);
+                        const m2 = getFighterMomentum(f2.history);
+                        
+                        // Jika petarung atas(f1) momentumnya negatif DAN momentumnya lebih buruk dari petarung bawah(f2)
+                        if (m1 < 0 && m1 < m2) {
+                            newRanksList[i] = f2.id;
+                            newRanksList[i+1] = f1.id;
+                            swapped = true;
+                        }
+                    }
+                }
+            } while (swapped);
+
+            // Pastikan maksimal hanya 10 petarung
+            if (newRanksList.length > 10) {
+                newRanksList = newRanksList.slice(0, 10);
+            }
+
+            // Logika Droupout / Purge: Depak petarung dari peringkat jika kalah 3 kali beruntun
+            newRanksList = newRanksList.filter(id => {
+                const f = currentFighters.find(f => f.id === id);
+                if (!f) return false;
+                const last3 = f.history.slice(-3);
+                const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
+                return !is3Losses;
+            });
+
+            // Regenerasi: Isi slot yang kosong dengan Non-Ranking berbasis "Highest ELO"
+            if (newRanksList.length < 10) {
+                let unrankedFighters = currentFighters.filter(f => {
+                    if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
+                    // Pastikan tidak memasukkan petarung dengan lose-streak 3x beruntun
+                    const last3 = f.history.slice(-3);
+                    const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
+                    return !is3Losses;
+                });
+
+                // Urutkan unranked fighter dengan asumsi Elo Rating BARU: 
+                // ELO = (Selisih Menang - Kalah) + Momentum (5 Laga Terakhir)
+                unrankedFighters.sort((a, b) => {
+                    const eloA = (a.record.wins - a.record.losses) + getFighterMomentum(a.history);
+                    const eloB = (b.record.wins - b.record.losses) + getFighterMomentum(b.history);
+                    return eloB - eloA;
+                });
+
+                // Masukkan ke ranking berdasarkan sisa slot
+                while (newRanksList.length < 10 && unrankedFighters.length > 0) {
+                    const topProspect = unrankedFighters.shift();
+                    newRanksList.push(topProspect.id);
+                }
+            }
+
+            return { champs: newChamps, ranks: { ...prevRanks, [weightClass]: newRanksList } };
+        };
+
+        const simulateEvent = (eventId) => {
+                let simulatedEvt = null;
+                setGameState(prev => {
+                    const eventIndex = prev.events.findIndex(e => e.id === eventId);
+                    const evt = prev.events[eventIndex];
+                    
+                    // Chronological check
+                    const pendingEarlier = prev.events.some(e => e.id !== eventId && (e.year < evt.year || (e.year === evt.year && e.week < evt.week)));
+                    if (pendingEarlier) {
+                        showToast("Gagal: Ada acara yang dijadwalkan lebih awal!", 'error');
+                        return prev;
+                    }
+
+                    if (evt.matches.length === 0) {
+                        showToast("Gagal: Card pertandingan masih kosong!", 'error');
+                        return prev;
+                    }
+
+                    let currentFighters = JSON.parse(JSON.stringify(prev.fighters));
+                    let currentChamps = { ...prev.champions };
+                    let currentRanks = { ...prev.rankings };
+
+                    const simulatedMatches = evt.matches.map(match => {
+                        const f1 = currentFighters.find(f => f.id === match.f1Id);
+                        const f2 = currentFighters.find(f => f.id === match.f2Id);
+                        
+                        // Gunakan hasil manual jika diatur, jika tidak jalankan RNG simulasi
+                        const result = match.manualResult ? match.manualResult : simulateMatch(f1, f2, match.isTitleFight);
+                        
+                        const winner = result.winnerId === f1.id ? f1 : f2;
+                        const loser = result.winnerId === f1.id ? f2 : f1;
+
+                        winner.record.wins += 1;
+                        winner.currentStreak += 1;
+                        loser.record.losses += 1;
+                        loser.currentStreak = 0;
+
+                        if (match.isTitleFight) {
+                            if (currentChamps[match.weightClass] === winner.id) {
+                                winner.titleDefenses += 1;
+                            } else {
+                                winner.titleWins += 1;
+                            }
+                        }
+
+                        // --- HITUNG SKOR MOMENTUM TERBARU ---
+                        const getRankIdx = (id, wc) => {
+                            if (currentChamps[wc] === id) return -1; // Juara
+                            const idx = currentRanks[wc].indexOf(id);
+                            return idx === -1 ? 999 : idx; // 999 = Unranked
+                        };
+                        
+                        const wRankIdx = getRankIdx(winner.id, match.weightClass);
+                        const lRankIdx = getRankIdx(loser.id, match.weightClass);
+
+                        // Poin Pemenang
+                        let winnerMomentum = 10; 
+                        if (wRankIdx > lRankIdx) winnerMomentum += 7; // Menang dari petarung ranking diatas (atau Unranked kalahin Ranked)
+                        else if (wRankIdx !== 999 && wRankIdx < lRankIdx) winnerMomentum += 5; // Menang dari petarung ranking dibawah
+
+                        if (result.method.includes('KO') || result.method === 'Submission') winnerMomentum += 2;
+                        if (result.method === 'Decision (Unanimous)') winnerMomentum += 1;
+
+                        // Poin Kalah
+                        let loserMomentum = -5;
+                        if (lRankIdx < wRankIdx) loserMomentum -= 1; // Kalah dari petarung ranking dibawah
+                        if (wRankIdx === 999) loserMomentum -= 2; // Kalah dari petarung non ranking
+
+                        const fightDesc = `${evt.name} - ${result.method} (R${result.round} - ${result.time})`;
+                        // Masukkan history berserta rekam jejak poin momentum yang didapat di pertarungan ini
+                        winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc, momentumPoints: winnerMomentum });
+                        loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc, momentumPoints: loserMomentum });
+
+                        const updatedRankings = processRankings(winner, loser, match.weightClass, match.isTitleFight, currentRanks, currentChamps, currentFighters);
+                        currentChamps = updatedRankings.champs;
+                        currentRanks = updatedRankings.ranks;
+
+                        return { ...match, result };
+                    });
+
+                    // --- KALKULASI BONUS (FOTN & POTN) ---
+                    let fotnMatchId = null;
+                    let potnWinnerIds = [];
+
+                    if (simulatedMatches.length > 0) {
+                        // Fight of the Night: Cari laga paling seru (Skor acak + bonus jika laga panjang/Decision)
+                        const fotnScores = simulatedMatches.map(m => {
+                            let score = randomInt(50, 100);
+                            if (m.result.method.includes('Decision')) score += 20;
+                            if (m.result.round >= 3) score += 15;
+                            return { id: m.id, score };
+                        });
+                        fotnScores.sort((a,b) => b.score - a.score);
+                        fotnMatchId = fotnScores[0].id;
+
+                        // Performance of the Night: Cari penyelesaian finish tercepat (KO/Sub)
+                        const potnScores = simulatedMatches.map(m => {
+                            let score = randomInt(50, 100);
+                            if (m.result.method.includes('KO') || m.result.method.includes('Submission')) {
+                                score += (5 - m.result.round) * 25; // Makin cepat finish, skor makin tinggi
+                            } else {
+                                score -= 40; // Kurangi peluang jika sekadar menang Decision
+                            }
+                            return { id: m.result.winnerId, score };
+                        });
+                        potnScores.sort((a,b) => b.score - a.score);
+                        
+                        // Pilih 1 hingga maksimal 2 penampil terbaik
+                        potnWinnerIds.push(potnScores[0].id);
+                        if (potnScores.length > 1 && potnScores[1].score > 70) { 
+                            potnWinnerIds.push(potnScores[1].id);
+                        }
+                    }
+
+                    simulatedEvt = { ...evt, matches: simulatedMatches, isSimulated: true, bonuses: { fotnMatchId, potnWinnerIds } };
+                    
+                    return {
+                        ...prev,
+                        fighters: currentFighters,
+                        champions: currentChamps,
+                        rankings: currentRanks,
+                        events: prev.events.filter(e => e.id !== eventId),
+                        history: [simulatedEvt, ...prev.history],
+                        currentWeek: evt.week === 52 ? 1 : evt.week + 1,
+                        currentYear: evt.week === 52 ? evt.year + 1 : evt.year,
+                        ppvCount: evt.type === 'PPV' ? prev.ppvCount + 1 : prev.ppvCount
+                    };
+                });
+                
+                if(simulatedEvt) {
+                    showToast('Acara berhasil disimulasikan!');
+                    setModal({ type: 'eventResult', data: simulatedEvt });
+                }
+            };
+
+            const renderSidebar = () => (
+                <>
+                    {/* Desktop Sidebar */}
+                    <div className="w-64 glass-panel border-r border-slate-700/50 min-h-screen p-5 hidden md:flex flex-col fixed h-full z-10 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-10 px-1">
+                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center font-black text-xl text-white shadow-lg shadow-indigo-500/30">UF</div>
+                            <h1 className="text-xl font-black bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Ultimate Fighter</h1>
+                        </div>
+                        
+                        <nav className="flex flex-col gap-2 flex-grow">
+                            {[
+                                { id: 'roster', icon: 'users', label: 'Roster Fighter' },
+                                { id: 'matchmaker', icon: 'calendar', label: 'Matchmaker' },
+                                { id: 'rankings', icon: 'bar-chart-2', label: 'Rankings' },
+                                { id: 'history', icon: 'clock', label: 'Riwayat Acara' },
+                                { id: 'records', icon: 'award', label: 'Hall of Fame' }
+                            ].map(item => (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => setActiveTab(item.id)}
+                                    className={`flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all duration-300 font-semibold ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'}`}
+                                >
+                                    <i data-lucide={item.icon} className="w-5 h-5"></i>
+                                    {item.label}
+                                </button>
+                            ))}
+                        </nav>
+
+                        <div className="mt-auto pt-5 border-t border-slate-700/50 flex flex-col gap-4">
+                            {isInstallable && (
+                                <button 
+                                    onClick={handleInstallClick}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 transition-all text-sm w-full"
+                                >
+                                    <i data-lucide="download" className="w-4 h-4"></i> Install App
+                                </button>
+                            )}
+                            <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 backdrop-blur">
+                                <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider font-bold">Waktu Simulasi</p>
+                                <p className="font-black text-white flex items-center gap-2 text-lg">
+                                    <i data-lucide="calendar-days" className="w-5 h-5 text-indigo-400"></i>
+                                    Pekan {gameState.currentWeek}, {gameState.currentYear}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Mobile Bottom Nav */}
+                    <div className="md:hidden fixed bottom-0 left-0 right-0 glass-panel border-t border-slate-700/50 z-20 flex justify-around items-center p-2 pb-safe">
+                        {[
+                            { id: 'roster', icon: 'users' },
+                            { id: 'matchmaker', icon: 'calendar' },
+                            { id: 'rankings', icon: 'bar-chart-2' },
+                            { id: 'history', icon: 'clock' },
+                            { id: 'records', icon: 'award' }
+                        ].map(item => (
+                            <button 
+                                key={item.id}
+                                onClick={() => setActiveTab(item.id)}
+                                className={`p-3 rounded-xl transition-all ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+                            >
+                                <i data-lucide={item.icon} className="w-6 h-6"></i>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Tombol Install Mobile Mengambang (Jika bisa diinstal) */}
+                    {isInstallable && (
+                        <button 
+                            onClick={handleInstallClick}
+                            className="md:hidden fixed top-4 right-4 bg-indigo-600 text-white p-3 rounded-full shadow-lg shadow-indigo-500/30 z-40 flex items-center gap-2 px-4 font-bold text-sm border border-indigo-400/50 animate-fade-in"
+                        >
+                            <i data-lucide="download" className="w-4 h-4"></i> Install
+                        </button>
+                    )}
+                </>
+            );
+
+            const RosterMenu = () => {
+                const [search, setSearch] = useState('');
+                const [filterClass, setFilterClass] = useState('All');
+                const [filterStatus, setFilterStatus] = useState('active');
+                const [sortBy, setSortBy] = useState('wins');
+
+                let filtered = gameState.fighters.filter(f => 
+                    (f.firstName.toLowerCase().includes(search.toLowerCase()) || f.lastName.toLowerCase().includes(search.toLowerCase()) || f.nickname.toLowerCase().includes(search.toLowerCase())) &&
+                    (filterClass === 'All' || f.weightClass === filterClass) &&
+                    (filterStatus === 'all' ? true : filterStatus === 'active' ? !f.isRetired : f.isRetired)
+                );
+
+                filtered.sort((a, b) => {
+                    if (sortBy === 'name') return a.lastName.localeCompare(b.lastName);
+                    if (sortBy === 'age') return calculateAge(a.dob, gameState.currentYear) - calculateAge(b.dob, gameState.currentYear);
+                    if (sortBy === 'wins') return b.record.wins - a.record.wins;
+                    if (sortBy === 'ovr') return calculateOvr(b.stats) - calculateOvr(a.stats);
+                    return 0;
+                });
+
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 pt-10 md:pt-0">
+                            <div>
+                                <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Roster Fighter</h2>
+                                <p className="text-slate-400 mt-1">Kelola petarung dan pantau statistik mereka.</p>
+                            </div>
+                            <button onClick={() => setModal({ type: 'addFighter' })} className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/25 transition-all transform hover:-translate-y-0.5 w-full sm:w-auto justify-center">
+                                <i data-lucide="plus" className="w-5 h-5"></i> Tambah Fighter
+                            </button>
+                        </div>
+
+                        <div className="flex flex-col md:flex-row gap-4 mb-8 glass-panel p-2 rounded-2xl">
+                            <div className="flex-1 relative">
+                                <i data-lucide="search" className="absolute left-4 top-3.5 w-5 h-5 text-slate-400"></i>
+                                <input type="text" placeholder="Cari nama atau julukan..." className="w-full bg-slate-900/50 border border-transparent rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:bg-slate-800 transition" value={search} onChange={e => setSearch(e.target.value)} />
+                            </div>
+                            <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+                                <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:outline-none focus:bg-slate-800 flex-1 min-w-[120px]" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                                    <option value="active">Status: Aktif</option>
+                                    <option value="retired">Status: Pensiun</option>
+                                    <option value="all">Semua Status</option>
+                                </select>
+                                <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:outline-none focus:bg-slate-800 flex-1 min-w-[120px]" value={filterClass} onChange={e => setFilterClass(e.target.value)}>
+                                    <option value="All">Semua Kelas</option>
+                                    {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:outline-none focus:bg-slate-800 flex-1 min-w-[120px]" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                                    <option value="wins">Kemenangan</option>
+                                    <option value="name">Urut Nama</option>
+                                    <option value="ovr">OVR Tertinggi</option>
+                                    <option value="age">Usia Termuda</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="glass-panel rounded-2xl overflow-hidden border border-slate-700/50">
+                            <div className="overflow-x-auto custom-scrollbar">
+                                <table className="w-full text-left border-collapse whitespace-nowrap">
+                                    <thead>
+                                        <tr className="bg-slate-800/80 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-700/50">
+                                            <th className="px-6 py-4 font-bold">Fighter</th>
+                                            <th className="px-6 py-4 font-bold">Kelas Berat</th>
+                                            <th className="px-6 py-4 font-bold">Negara</th>
+                                            <th className="px-6 py-4 font-bold text-center">Usia</th>
+                                            <th className="px-6 py-4 font-bold text-center">OVR</th>
+                                            <th className="px-6 py-4 font-bold text-center">Rekor</th>
+                                            <th className="px-6 py-4 font-bold text-right">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700/50">
+                                        {filtered.map(fighter => {
+                                            const age = calculateAge(fighter.dob, gameState.currentYear);
+                                            const ovr = calculateOvr(fighter.stats);
+                                            return (
+                                                <tr key={fighter.id} onClick={() => setModal({ type: 'fighterDetail', data: fighter })} className={`hover:bg-slate-800/50 transition-colors cursor-pointer group ${fighter.isRetired ? 'opacity-50 bg-slate-900/30' : ''}`}>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center font-black text-sm text-slate-300 shadow-inner border border-slate-600/50 shrink-0">
+                                                                {getInitials(fighter.firstName, fighter.lastName)}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-bold text-white group-hover:text-indigo-400 transition-colors">{fighter.firstName} "{fighter.nickname}" {fighter.lastName}</p>
+                                                                <p className="text-xs text-slate-500 mt-0.5 font-medium">{fighter.style}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-800 rounded-lg text-slate-300 border border-slate-700">{fighter.weightClass}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm text-slate-300">
+                                                        <span className="flex items-center gap-1.5 font-medium"><i data-lucide="map-pin" className="w-3.5 h-3.5 text-slate-500"></i> {fighter.country}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm text-slate-300 text-center font-medium">{age} Thn</td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className={`font-black ${getOvrColor(ovr)}`}>{ovr}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className="font-black text-emerald-400 text-lg">{fighter.record.wins}-{fighter.record.losses}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        {fighter.isRetired ? (
+                                                            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-red-900/50 text-red-400 rounded-lg border border-red-900/50 shadow-inner">Pensiun</span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-indigo-900/40 text-indigo-300 rounded-lg border border-indigo-500/30 shadow-inner">Aktif</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                                {filtered.length === 0 && (
+                                    <div className="text-center py-16 px-6">
+                                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
+                                            <i data-lucide="users" className="w-8 h-8"></i>
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-300 mb-1">Belum Ada Fighter</h3>
+                                        <p className="text-sm text-slate-500">Tambahkan fighter baru atau sesuaikan filter pencarian.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const MatchmakerMenu = () => {
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 pt-10 md:pt-0">
+                            <div>
+                                <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Matchmaker</h2>
+                                <p className="text-slate-400 mt-1">Jadwalkan pertarungan dan susun card impian.</p>
+                            </div>
+                            <button onClick={() => setModal({ type: 'addEvent' })} className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/25 transition-all transform hover:-translate-y-0.5 w-full sm:w-auto justify-center">
+                                <i data-lucide="calendar-plus" className="w-5 h-5"></i> Buat Acara
+                            </button>
+                        </div>
+
+                        <div className="space-y-8">
+                            {gameState.events.length === 0 ? (
+                                <div className="glass-panel p-16 text-center rounded-3xl border border-slate-700 border-dashed">
+                                    <i data-lucide="calendar-x" className="w-12 h-12 mx-auto text-slate-500 mb-4"></i>
+                                    <h3 className="text-xl font-bold text-slate-300 mb-2">Jadwal Kosong</h3>
+                                    <p className="text-slate-500">Belum ada acara yang dijadwalkan. Buat acara baru untuk mulai menyusun pertarungan.</p>
+                                </div>
+                            ) : (
+                                gameState.events.sort((a,b) => (a.year !== b.year ? a.year - b.year : a.week - b.week)).map(evt => (
+                                    <div key={evt.id} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl relative">
+                                        <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 to-cyan-500"></div>
+                                        <div className="bg-slate-800/80 p-5 md:p-6 border-b border-slate-700/50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center pl-8">
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg ${evt.type === 'PPV' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                                                        {evt.type}
+                                                    </span>
+                                                    <span className="text-slate-400 text-sm font-semibold flex items-center gap-1">
+                                                        <i data-lucide="clock" className="w-4 h-4"></i> Pekan {evt.week}, {evt.year}
+                                                    </span>
+                                                </div>
+                                                <h3 className="text-2xl font-black text-white">{evt.name || 'Acara Belum Memiliki Main Event'}</h3>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                                                <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
+                                                    <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
+                                                </button>
+                                                <button onClick={() => simulateEvent(evt.id)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
+                                                    <i data-lucide="play" className="w-4 h-4"></i> Simulasi
+                                                </button>
+                                                <button onClick={() => deleteEvent(evt.id)} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-4 py-2.5 rounded-xl transition border border-red-900/50 flex items-center justify-center">
+                                                    <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="p-2 md:p-6 bg-slate-900/30 pl-8">
+                                            {evt.matches.length === 0 ? (
+                                                <p className="text-slate-500 text-sm italic text-center py-8">Card masih kosong. Klik 'Atur Card' untuk menambahkan pertandingan.</p>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    {evt.matches.map((m, idx) => {
+                                                        const f1 = gameState.fighters.find(f => f.id === m.f1Id);
+                                                        const f2 = gameState.fighters.find(f => f.id === m.f2Id);
+                                                        return (
+                                                            <div key={m.id} className="relative flex flex-col md:flex-row items-center justify-between bg-slate-800/40 p-4 md:p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 transition group">
+                                                                {idx === 0 && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-red-500">MAIN EVENT</div>}
+                                                                {m.isTitleFight && idx !== 0 && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-900 text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-amber-400">TITLE FIGHT</div>}
+                                                                
+                                                                <div className="flex-1 text-center md:text-right w-full md:w-auto mb-4 md:mb-0">
+                                                                    <p className="font-black text-xl text-white group-hover:text-red-400 transition">{f1.firstName} {f1.lastName}</p>
+                                                                    <p className="text-xs text-slate-400 mt-1">
+                                                                        Usia {calculateAge(f1.dob, gameState.currentYear)} • <span className="text-emerald-400 font-bold">{f1.record.wins}-{f1.record.losses}</span>
+                                                                    </p>
+                                                                </div>
+                                                                
+                                                                <div className="px-6 md:px-10 text-center flex flex-col items-center shrink-0 mb-4 md:mb-0">
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 mb-2">{m.weightClass}</span>
+                                                                    <span className="font-black text-slate-600 text-lg">VS</span>
+                                                                </div>
+                                                                
+                                                                <div className="flex-1 text-center md:text-left w-full md:w-auto">
+                                                                    <p className="font-black text-xl text-white group-hover:text-blue-400 transition">{f2.firstName} {f2.lastName}</p>
+                                                                    <p className="text-xs text-slate-400 mt-1">
+                                                                        Usia {calculateAge(f2.dob, gameState.currentYear)} • <span className="text-emerald-400 font-bold">{f2.record.wins}-{f2.record.losses}</span>
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const RankingsMenu = () => {
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24">
+                        <div className="mb-8 pt-10 md:pt-0">
+                            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Peringkat Fighter</h2>
+                            <p className="text-slate-400 mt-1">Pantau sang juara dan penantang di tiap kelas.</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {WEIGHT_CLASSES.map(wc => (
+                                <div key={wc} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl">
+                                    <div className="bg-gradient-to-r from-indigo-900/60 to-slate-900 p-5 border-b border-indigo-500/30 text-center relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjIiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSIvPjwvc3ZnPg==')] opacity-50"></div>
+                                        <h3 className="font-black text-2xl text-white relative z-10">{wc}</h3>
+                                    </div>
+                                    
+                                    <div className="p-0">
+                                        {/* Champion Slot */}
+                                        <div 
+                                            className="p-5 border-b border-amber-500/40 bg-gradient-to-r from-amber-500/10 to-transparent flex items-center cursor-pointer hover:bg-amber-500/20 transition-all relative"
+                                            onClick={() => gameState.champions[wc] && setModal({type: 'fighterDetail', data: gameState.fighters.find(f=>f.id===gameState.champions[wc])})}
+                                        >
+                                            <div className="w-12 h-12 flex items-center justify-center bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl mr-5 shadow-lg shadow-amber-500/30 text-white">
+                                                <i data-lucide="crown" className="w-6 h-6"></i>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-0.5">Champion</p>
+                                                {gameState.champions[wc] ? (
+                                                    <>
+                                                        <p className="font-black text-xl text-white leading-none mb-1">{gameState.fighters.find(f=>f.id===gameState.champions[wc]).lastName}</p>
+                                                        <p className="text-xs text-slate-400 font-semibold">{gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.wins}-{gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.losses} • OVR {calculateOvr(gameState.fighters.find(f=>f.id===gameState.champions[wc]).stats)}</p>
+                                                    </>
+                                                ) : <p className="text-slate-500 italic text-sm font-semibold">Gelar Kosong</p>}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Contender Slots */}
+                                        {Array.from({length: 10}).map((_, i) => {
+                                            const fId = gameState.rankings[wc][i];
+                                            const f = fId ? gameState.fighters.find(f => f.id === fId) : null;
+                                            return (
+                                                <div 
+                                                    key={i} 
+                                                    className="p-4 border-b border-slate-800/50 flex items-center hover:bg-slate-800/80 transition cursor-pointer group"
+                                                    onClick={() => f && setModal({type: 'fighterDetail', data: f})}
+                                                >
+                                                    <div className="w-8 font-black text-slate-600 text-center text-lg">{i + 1}</div>
+                                                    <div className="ml-5 flex-1 flex justify-between items-center">
+                                                        {f ? (
+                                                            <>
+                                                                <p className="font-bold text-slate-300 group-hover:text-white transition">{f.lastName}</p>
+                                                                <span className="text-xs font-semibold text-slate-500 bg-slate-900 px-2 py-1 rounded-md">{f.record.wins}-{f.record.losses}</span>
+                                                            </>
+                                                        ) : <p className="text-slate-700 text-sm font-medium">-- Kosong --</p>}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            const HistoryMenu = () => {
+                const [filterType, setFilterType] = useState('All');
+                const [filterYear, setFilterYear] = useState('All');
+                const [sortOrder, setSortOrder] = useState('Newest');
+
+                const uniqueYears = [...new Set(gameState.history.map(e => e.year))].sort((a,b)=>b-a);
+                let filtered = gameState.history.filter(e => (filterType === 'All' || e.type === filterType) && (filterYear === 'All' || e.year.toString() === filterYear));
+                filtered.sort((a, b) => (a.year !== b.year ? (sortOrder === 'Newest' ? b.year - a.year : a.year - b.year) : (sortOrder === 'Newest' ? b.week - a.week : a.week - b.week)));
+
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24">
+                        <div className="mb-8 pt-10 md:pt-0">
+                            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Riwayat Acara</h2>
+                            <p className="text-slate-400 mt-1">Arsip hasil acara yang telah berlangsung.</p>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row gap-4 mb-8 glass-panel p-2 rounded-2xl">
+                            <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:bg-slate-800 flex-1 outline-none" value={filterType} onChange={e => setFilterType(e.target.value)}>
+                                <option value="All">Semua Acara</option>
+                                <option value="Fight Week">Fight Week</option>
+                                <option value="PPV">Pay-Per-View</option>
+                            </select>
+                            <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:bg-slate-800 flex-1 outline-none" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
+                                <option value="All">Semua Tahun</option>
+                                {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                            <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:bg-slate-800 flex-1 outline-none" value={sortOrder} onChange={e => setSortOrder(e.target.value)}>
+                                <option value="Newest">Terbaru</option>
+                                <option value="Oldest">Terlama</option>
+                            </select>
+                        </div>
+
+                        <div className="grid gap-4">
+                            {filtered.length === 0 ? <p className="text-slate-500 text-center py-12 glass-panel rounded-3xl border-dashed border-2 border-slate-700">Tidak ada riwayat acara.</p> :
+                                filtered.map(evt => (
+                                    <div key={evt.id} className="glass-panel p-5 md:p-6 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between cursor-pointer hover:bg-slate-800/80 transition-all border border-slate-700/50 hover:border-indigo-500/30 group" onClick={() => setModal({type: 'eventResult', data: evt})}>
+                                        <div className="mb-4 md:mb-0">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-900/30 border border-indigo-500/30 px-3 py-1 rounded-lg">Pekan {evt.week}, {evt.year}</span>
+                                            <h3 className="text-xl md:text-2xl font-black mt-3 text-white group-hover:text-indigo-300 transition">{evt.name}</h3>
+                                            <p className="text-sm font-semibold text-slate-500 mt-1"><i data-lucide="swords" className="w-4 h-4 inline mr-1"></i> {evt.matches.length} Pertandingan</p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center text-slate-400 group-hover:text-indigo-400 group-hover:bg-indigo-900/30 transition-all self-end md:self-auto border border-slate-700">
+                                            <i data-lucide="chevron-right"></i>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </div>
+                );
+            };
+
+            const RecordsMenu = () => {
+                const allF = gameState.fighters;
+                if (allF.length === 0) return <div className="p-10 pt-20"><p className="text-slate-500">Belum ada data petarung untuk kalkulasi rekor.</p></div>;
+
+                // Modifikasi fungsi getTop10 agar mendukung filter (misal: hanya petarung aktif untuk P4P)
+                const getTop10 = (sortFn, filterFn = null) => {
+                    let filtered = filterFn ? allF.filter(filterFn) : [...allF];
+                    return filtered.sort(sortFn).slice(0, 10);
+                };
+                
+                // Rumus Skor G.O.A.T (Sepanjang Masa, termasuk pensiunan)
+                const getGoatScore = (f) => (f.record.wins * 10) - (f.record.losses * 5) + (f.titleWins * 30) + (f.titleDefenses * 40);
+                
+                // Rumus Skor Pound-For-Pound (Hanya Petarung Aktif, Lintas Kelas Berat)
+                const getP4PScore = (f) => {
+                    const ovr = calculateOvr(f.stats);
+                    const momentum = getFighterMomentum(f.history);
+                    const isChamp = Object.values(gameState.champions).includes(f.id) ? 50 : 0;
+                    return ovr + momentum + isChamp + (f.currentStreak * 5);
+                };
+
+                const lists = [
+                    { t: "Pound-For-Pound", i: "crosshair", c: "red", data: getTop10((a,b) => getP4PScore(b) - getP4PScore(a), f => !f.isRetired && (f.record.wins > 0 || f.record.losses > 0)), s: "Pts", val: f => getP4PScore(f), showAll: true },
+                    { t: "G.O.A.T", i: "star", c: "amber", data: getTop10((a,b) => getGoatScore(b) - getGoatScore(a), f => f.record.wins > 0 || f.record.losses > 0), s: "Pts", val: f => getGoatScore(f), showAll: true },
+                    { t: "Total Laga Gelar", i: "crown", c: "amber", data: getTop10((a,b) => (b.titleWins + b.titleDefenses) - (a.titleWins + a.titleDefenses)), s: "Kali", val: f => f.titleWins + f.titleDefenses },
+                    { t: "Laga Terbanyak", i: "swords", c: "indigo", data: getTop10((a,b) => (b.record.wins+b.record.losses) - (a.record.wins+a.record.losses)), s: "Laga", val: f => f.record.wins+f.record.losses },
+                    { t: "Kemenangan Terbanyak", i: "trophy", c: "emerald", data: getTop10((a,b) => b.record.wins - a.record.wins), s: "Menang", val: f => f.record.wins },
+                    { t: "Win Streak Terpanjang", i: "flame", c: "orange", data: getTop10((a,b) => b.currentStreak - a.currentStreak), s: "Beruntun", val: f => f.currentStreak },
+                    { t: "Pertahanan Gelar", i: "shield", c: "blue", data: getTop10((a,b) => b.titleDefenses - a.titleDefenses), s: "Kali", val: f => f.titleDefenses }
+                ];
+
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24">
+                        <div className="mb-8 pt-10 md:pt-0">
+                            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Hall of Fame</h2>
+                            <p className="text-slate-400 mt-1">Pencetak rekor dan legenda promotor.</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {lists.map((l, idx) => (
+                                <div key={idx} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl flex flex-col">
+                                    <div className={`bg-${l.c}-900/30 p-5 border-b border-${l.c}-500/20 flex items-center gap-4`}>
+                                        <div className={`w-10 h-10 flex items-center justify-center bg-${l.c}-500/20 rounded-xl text-${l.c}-400 shadow-inner`}>
+                                            <i data-lucide={l.i} className="w-5 h-5"></i>
+                                        </div>
+                                        <h3 className={`font-black text-lg text-white`}>{l.t}</h3>
+                                    </div>
+                                    <div className="p-0 flex-1">
+                                        {/* Cek apakah data kosong atau nilainya <= 0 (kecuali list dgn showAll=true yang membolehkan skor mines) */}
+                                        {l.data.filter(f => l.showAll || l.val(f) > 0).length === 0 ? (
+                                            <p className="text-slate-500 text-sm font-semibold text-center py-10">Belum ada rekor tercetak.</p>
+                                        ) : (
+                                            l.data.map((f, i) => (l.showAll || l.val(f) > 0) && (
+                                                <div key={i} className="flex justify-between items-center p-4 border-b border-slate-800/50 hover:bg-slate-800/80 transition cursor-pointer group" onClick={() => setModal({type: 'fighterDetail', data: f})}>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-black text-slate-600 w-5 text-right">{i+1}.</span>
+                                                        <span className={`font-bold transition ${f.isRetired ? 'text-slate-500 line-through' : 'text-slate-300 group-hover:text-white'}`}>{f.lastName}</span>
+                                                    </div>
+                                                    <span className={`font-black text-${l.c}-400 bg-${l.c}-900/20 px-3 py-1 rounded-lg`}>{l.val(f)} <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider ml-1">{l.s}</span></span>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderModal = () => {
+                if (!modal) return null;
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay p-4 sm:p-6 animate-fade-in">
+                        <div className="bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative flex flex-col">
+                            <button onClick={() => setModal(null)} className="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800 p-2 rounded-full transition z-10"><i data-lucide="x" className="w-5 h-5"></i></button>
+                            {modal.type === 'addFighter' && <AddFighterModal onSubmit={addFighter} currentYear={gameState.currentYear} />}
+                            {modal.type === 'editFighter' && <AddFighterModal initialData={modal.data} onSubmit={editFighter} currentYear={gameState.currentYear} isEdit={true} />}
+                            {modal.type === 'fighterDetail' && <FighterDetailModal fighter={modal.data} onRetire={retireFighter} onEdit={() => setModal({type: 'editFighter', data: modal.data})} currentYear={gameState.currentYear} gameState={gameState} />}
+                            {modal.type === 'addEvent' && <AddEventModal onSubmit={addEvent} defaultYear={gameState.currentYear} defaultWeek={gameState.currentWeek} />}
+                            {modal.type === 'addMatch' && <AddMatchModal eventId={modal.data} onSubmit={addMatch} gameState={gameState} />}
+                            {modal.type === 'eventResult' && <EventResultModal event={modal.data} gameState={gameState} />}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="flex h-screen overflow-hidden text-slate-200">
+                    {renderSidebar()}
+                    <div className="md:ml-64 flex-1 h-full overflow-y-auto custom-scrollbar relative">
+                        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'radial-gradient(#6366f1 1px, transparent 1px)', backgroundSize: '32px 32px'}}></div>
+                        <div className="relative z-10 min-h-full">
+                            {activeTab === 'roster' && <RosterMenu />}
+                            {activeTab === 'matchmaker' && <MatchmakerMenu />}
+                            {activeTab === 'rankings' && <RankingsMenu />}
+                            {activeTab === 'history' && <HistoryMenu />}
+                            {activeTab === 'records' && <RecordsMenu />}
+                        </div>
+                    </div>
+                    {renderModal()}
+                    {toast && (
+                        <div className={`fixed top-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-auto md:right-6 md:bottom-6 md:top-auto px-6 py-4 rounded-2xl shadow-xl font-bold animate-fade-in z-50 flex items-center gap-3 border ${toast.type === 'success' ? 'bg-emerald-900/90 text-emerald-100 border-emerald-500/50 shadow-emerald-900/50' : 'bg-red-900/90 text-red-100 border-red-500/50 shadow-red-900/50'} backdrop-blur-md`}>
+                            <i data-lucide={toast.type === 'success' ? 'check-circle' : 'alert-circle'} className="w-5 h-5"></i> {toast.msg}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const AddFighterModal = ({ onSubmit, currentYear, initialData = null, isEdit = false }) => {
+            const [mode, setMode] = useState(isEdit ? 'manual' : 'random');
+            const [formData, setFormData] = useState(initialData || { 
+                weightClass: 'Ringan', firstName:'', lastName:'', nickname:'', country:'Indonesia', 
+                dob: `${currentYear-18}-01-01`, style:'Striker', str:50, grp:50, sta:50, pow:50 
+            });
+
+            useEffect(() => {
+                if(isEdit && initialData) setFormData({...initialData, str: initialData.stats.striking, grp: initialData.stats.grappling, sta: initialData.stats.stamina, pow: initialData.stats.power});
+            }, [isEdit, initialData]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (mode === 'random' && !isEdit) {
+                    onSubmit(generateFighter(formData.weightClass, true, null, currentYear));
+                } else {
+                    const customData = {
+                        firstName: formData.firstName, lastName: formData.lastName, nickname: formData.nickname, country: formData.country, dob: formData.dob, weightClass: formData.weightClass, style: formData.style,
+                        stats: { striking: parseInt(formData.str), grappling: parseInt(formData.grp), stamina: parseInt(formData.sta), power: parseInt(formData.pow) }
+                    };
+                    isEdit ? onSubmit({ ...initialData, ...customData }) : onSubmit(generateFighter(formData.weightClass, false, customData, currentYear));
+                }
+            };
+            const ovrPrev = calculateOvr({striking: parseInt(formData.str||0), grappling: parseInt(formData.grp||0), stamina: parseInt(formData.sta||0), power: parseInt(formData.pow||0)});
+
+            return (
+                <div className="p-6 md:p-8">
+                    <h2 className="text-2xl font-black mb-6 text-white">{isEdit ? 'Edit Data Fighter' : 'Pendaftaran Fighter Baru'}</h2>
+                    {!isEdit && (
+                        <div className="flex gap-2 mb-8 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                            <button type="button" onClick={()=>setMode('random')} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${mode === 'random' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>Acak (Hanya Kelas)</button>
+                            <button type="button" onClick={()=>setMode('manual')} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${mode === 'manual' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>Buat Kustom</button>
+                        </div>
+                    )}
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        <div>
+                            <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Kelas Berat</label>
+                            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" value={formData.weightClass} onChange={e=>setFormData({...formData, weightClass: e.target.value})} disabled={isEdit}>
+                                {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            {isEdit && <p className="text-xs text-amber-500 mt-2 font-medium"><i data-lucide="info" className="w-3 h-3 inline"></i> Kelas berat permanen dan tidak dapat diubah.</p>}
+                        </div>
+                        {mode === 'manual' && (
+                            <div className="animate-fade-in space-y-5">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Nama Depan</label><input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition" value={formData.firstName} onChange={e=>setFormData({...formData, firstName: e.target.value})} /></div>
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Nama Belakang</label><input required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition" value={formData.lastName} onChange={e=>setFormData({...formData, lastName: e.target.value})} /></div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Julukan</label><input className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition" value={formData.nickname} onChange={e=>setFormData({...formData, nickname: e.target.value})} /></div>
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Negara</label>
+                                        <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition" value={formData.country} onChange={e=>setFormData({...formData, country: e.target.value})}>
+                                            {COUNTRIES.map(c=><option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Tanggal Lahir</label><input type="date" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition text-slate-200" value={formData.dob} onChange={e=>setFormData({...formData, dob: e.target.value})} /></div>
+                                    <div><label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Gaya Tarung</label>
+                                        <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 transition" value={formData.style} onChange={e=>setFormData({...formData, style: e.target.value})}>
+                                            {FIGHT_STYLES.map(c=><option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div className="pt-6 border-t border-slate-800 mt-6">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="font-black text-slate-300">Atribut Kemampuan</h3>
+                                        <span className="bg-indigo-900/50 text-indigo-300 px-4 py-1.5 rounded-lg font-black border border-indigo-500/30 shadow-inner tracking-widest text-sm">OVR {ovrPrev || 0}</span>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-3 md:gap-4">
+                                        {['str','grp','sta','pow'].map(stat => (
+                                            <div key={stat}>
+                                                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-2 text-center">{stat === 'str' ? 'Strike' : stat === 'grp' ? 'Grapple' : stat === 'sta' ? 'Stamina' : 'Power'}</label>
+                                                <input type="number" min="1" max="100" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-3 text-center font-black text-lg focus:border-indigo-500 focus:bg-slate-800 transition outline-none" value={formData[stat]} onChange={e=>setFormData({...formData, [stat]: e.target.value})} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <button type="submit" className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-indigo-500/25 transition-all text-white text-lg tracking-wide">{isEdit ? 'Simpan Perubahan' : 'Daftarkan Fighter'}</button>
+                    </form>
+                </div>
+            );
+        };
+
+        const FighterDetailModal = ({ fighter, onRetire, onEdit, currentYear, gameState }) => {
+            const age = calculateAge(fighter.dob, currentYear);
+            const ovr = calculateOvr(fighter.stats);
+            const [retireConfirm, setRetireConfirm] = useState(false);
+            
+            // Cek status Juara atau Ranking
+            let rankDisplay = 'Unranked';
+            if (gameState.champions[fighter.weightClass] === fighter.id) rankDisplay = 'Champion';
+            else {
+                const idx = gameState.rankings[fighter.weightClass].indexOf(fighter.id);
+                if (idx !== -1) rankDisplay = `Rank #${idx + 1}`;
+            }
+            if(fighter.isRetired) rankDisplay = 'Retired';
+            
+            return (
+                <div className="p-6 md:p-8">
+                    <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-6">
+                        <div className="flex items-center gap-5 w-full md:w-auto">
+                            <div className="w-20 h-20 shrink-0 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center font-black text-3xl text-slate-300 shadow-inner border border-slate-600">
+                                {getInitials(fighter.firstName, fighter.lastName)}
+                            </div>
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                    <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700">{fighter.weightClass}</span>
+                                    {rankDisplay === 'Champion' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg flex items-center gap-1"><i data-lucide="crown" className="w-3 h-3"></i> Champion</span> :
+                                     rankDisplay !== 'Unranked' && rankDisplay !== 'Retired' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-indigo-900/40 text-indigo-300 border border-indigo-500/30 rounded-lg">{rankDisplay}</span> : null}
+                                    {fighter.isRetired && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-red-900/50 text-red-400 rounded-lg border border-red-900/50">Pensiun</span>}
+                                </div>
+                                <h2 className="text-3xl md:text-4xl font-black leading-none text-white tracking-tight">{fighter.firstName} <span className="text-indigo-400">"{fighter.nickname}"</span> {fighter.lastName}</h2>
+                                <p className="text-slate-400 mt-2 font-medium">{fighter.country} • Lahir: {fighter.dob} (Usia {age})</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 w-full md:w-auto">
+                            {!fighter.isRetired && (
+                                <button onClick={onEdit} className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition flex items-center gap-2 justify-center border border-slate-700">
+                                    <i data-lucide="edit-2" className="w-4 h-4"></i> Edit
+                                </button>
+                            )}
+                            {!fighter.isRetired && (
+                                retireConfirm ? (
+                                    <div className="flex-1 md:flex-none flex items-center bg-red-900/20 rounded-xl border border-red-900/50 overflow-hidden">
+                                        <button onClick={() => onRetire(fighter.id)} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-3 py-2.5 font-bold text-xs transition">Konfirmasi</button>
+                                        <button onClick={() => setRetireConfirm(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2.5 font-bold text-xs transition border-l border-red-900/50">Batal</button>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setRetireConfirm(true)} className="flex-1 md:flex-none bg-red-900/30 hover:bg-red-800 text-red-300 px-4 py-2.5 rounded-xl font-bold text-sm transition border border-red-900/50">
+                                        Pensiunkan
+                                    </button>
+                                )
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-3 md:gap-5 mb-8">
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Rekor</p>
+                            <p className="text-2xl md:text-3xl font-black text-emerald-400">{fighter.record.wins}-{fighter.record.losses}-{fighter.record.draws}</p>
+                        </div>
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Gaya</p>
+                            <p className="text-lg font-black text-white">{fighter.style}</p>
+                        </div>
+                        <div className="bg-gradient-to-b from-indigo-900/40 to-slate-900 p-4 rounded-2xl text-center border border-indigo-500/30 shadow-inner">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 mb-1">Rating OVR</p>
+                            <p className="text-3xl font-black text-white">{ovr}</p>
+                        </div>
+                    </div>
+
+                    <div className="mb-8">
+                        <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-400 flex items-center gap-2"><i data-lucide="activity" className="w-4 h-4 text-indigo-400"></i> Atribut Fisik & Skill</h3>
+                        <div className="grid gap-3 bg-slate-900/50 p-5 rounded-2xl border border-slate-800">
+                            {Object.entries(fighter.stats).map(([k, v]) => (
+                                <div key={k} className="flex items-center text-sm">
+                                    <span className="w-24 capitalize text-slate-300 font-bold text-xs tracking-wide">{k}</span>
+                                    <div className="flex-1 bg-slate-950 rounded-full h-2.5 overflow-hidden mr-4 border border-slate-800/50">
+                                        <div className="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full" style={{width: `${v}%`}}></div>
+                                    </div>
+                                    <span className="w-8 text-right font-black text-white">{v}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-400 flex items-center gap-2"><i data-lucide="history" className="w-4 h-4 text-indigo-400"></i> Riwayat Laga</h3>
+                        {fighter.history.length === 0 ? <p className="text-sm text-slate-500 bg-slate-900/50 p-6 rounded-2xl text-center font-medium border border-dashed border-slate-800">Belum ada laga yang tercatat di oktagon.</p> : (
+                            <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-2">
+                                {fighter.history.slice().reverse().map((h, i) => (
+                                    <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-800/40 p-4 rounded-xl text-sm border border-slate-700/50 gap-3 hover:bg-slate-800/60 transition">
+                                        <div className="flex items-center gap-4">
+                                            <span className={`w-10 h-10 flex items-center justify-center rounded-lg font-black text-lg shrink-0 shadow-inner ${h.result === 'W' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>{h.result}</span>
+                                            <div>
+                                                <p className="font-bold text-white text-base">vs {h.opponentName}</p>
+                                                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{h.date}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-slate-300 sm:text-right bg-slate-900 px-3 py-2 rounded-lg font-medium border border-slate-800">{h.detail}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const AddEventModal = ({ onSubmit, defaultYear, defaultWeek }) => {
+            const [type, setType] = useState('Fight Week');
+            const [week, setWeek] = useState(defaultWeek);
+            const [year, setYear] = useState(defaultYear);
+
+            return (
+                <div className="p-6 md:p-8">
+                    <h2 className="text-2xl font-black mb-6 text-white">Jadwalkan Acara Baru</h2>
+                    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ type, week: parseInt(week), year: parseInt(year) }); }} className="space-y-5">
+                        <div>
+                            <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Jenis Acara</label>
+                            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition" value={type} onChange={e=>setType(e.target.value)}>
+                                <option value="Fight Week">Fight Week (Regular)</option>
+                                <option value="PPV">Pay-Per-View (PPV)</option>
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Pekan Ke-</label>
+                                <input type="number" min="1" max="52" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={week} onChange={e=>setWeek(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Tahun</label>
+                                <input type="number" min="2026" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={year} onChange={e=>setYear(e.target.value)} />
+                            </div>
+                        </div>
+                        <button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
+                    </form>
+                </div>
+            );
+        };
+
+        const AddMatchModal = ({ eventId, onSubmit, gameState }) => {
+            const [weightClass, setWeightClass] = useState('Ringan');
+            const [isTitleFight, setIsTitleFight] = useState(false);
+            const [f1Id, setF1Id] = useState('');
+            const [f2Id, setF2Id] = useState('');
+
+            // State untuk Manual Result Override
+            const [isManual, setIsManual] = useState(false);
+            const [manualWinner, setManualWinner] = useState('');
+            const [manualMethod, setManualMethod] = useState('KO/TKO');
+            const [manualRound, setManualRound] = useState('1');
+            const [manualTime, setManualTime] = useState('02:30');
+
+            const evt = gameState.events.find(e => e.id === eventId);
+            const scheduledFighterIds = gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
+            const titleFightExists = evt.matches.some(m => m.isTitleFight && m.weightClass === weightClass);
+            const champId = gameState.champions[weightClass];
+
+            // Filter petarung yang belum ada jadwal dan tidak pensiun
+            let availableFighters = gameState.fighters.filter(f => !f.isRetired && f.weightClass === weightClass && !scheduledFighterIds.includes(f.id));
+
+            // Hilangkan juara dari pilihan jika bukan perebutan gelar
+            if (!isTitleFight && champId) {
+                availableFighters = availableFighters.filter(f => f.id !== champId);
+            }
+
+            // Urutkan berdasarkan ranking tertinggi
+            availableFighters.sort((a, b) => {
+                if (a.id === champId) return -1;
+                if (b.id === champId) return 1;
+                
+                const rankA = gameState.rankings[weightClass].indexOf(a.id);
+                const rankB = gameState.rankings[weightClass].indexOf(b.id);
+                const valA = rankA === -1 ? 999 : rankA;
+                const valB = rankB === -1 ? 999 : rankB;
+                return valA - valB;
+            });
+
+            useEffect(() => {
+                if (isTitleFight) {
+                    if (champId && !scheduledFighterIds.includes(champId)) setF1Id(champId);
+                    else setF1Id('');
+                } else setF1Id('');
+                setF2Id('');
+            }, [isTitleFight, weightClass]);
+
+            const getRankText = (id, wc) => {
+                if(gameState.champions[wc] === id) return 'C';
+                const idx = gameState.rankings[wc].indexOf(id);
+                return idx !== -1 ? `#${idx + 1}` : 'UR';
+            };
+
+            const checkH2H = (id1, id2) => {
+                if(!id1 || !id2) return null;
+                const f1 = gameState.fighters.find(f=>f.id===id1);
+                let wins = 0, losses = 0;
+                f1.history.forEach(h => {
+                    if(h.opponentId === id2) { if(h.result === 'W') wins++; else losses++; }
+                });
+                return `${wins} - ${losses}`;
+            };
+
+            const getMomentumText = (history) => {
+                if (!history || history.length === 0) return '➖ (Skor: 0)';
+                
+                const score = getFighterMomentum(history);
+                
+                let streakType = null;
+                let streakCount = 0;
+                
+                // Menghitung jumlah streak dari hasil pertandingan terakhir ke awal
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (streakType === null) {
+                        streakType = history[i].result;
+                        streakCount = 1;
+                    } else if (streakType === history[i].result) {
+                        streakCount++;
+                    } else {
+                        break;
+                    }
+                }
+
+                const scoreText = score > 0 ? `+${score}` : score;
+
+                if (streakType === 'W') {
+                    return `${'🔥'.repeat(Math.min(3, streakCount))} (Skor: ${scoreText})`;
+                } else if (streakType === 'L') {
+                    return `${'🧊'.repeat(Math.min(3, streakCount))} (Skor: ${scoreText})`;
+                }
+                
+                return `➖ (Skor: ${scoreText})`;
+            };
+
+            const handleSubmit = () => {
+                let manualResult = null;
+                // Jika diatur manual, bungkus hasilnya untuk dilempar ke sistem simulasi
+                if (isManual && manualWinner) {
+                    manualResult = {
+                        winnerId: manualWinner,
+                        loserId: manualWinner === f1Id ? f2Id : f1Id,
+                        method: manualMethod,
+                        round: parseInt(manualRound),
+                        time: manualTime
+                    };
+                }
+                onSubmit(eventId, { weightClass, isTitleFight, f1Id, f2Id, manualResult });
+            };
+
+            return (
+                <div className="p-6 md:p-8">
+                    <h2 className="text-2xl font-black mb-6 text-white">Susun Pertandingan</h2>
+                    
+                    <div className="space-y-4 mb-6">
+                        <div>
+                            <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Kelas Berat Divisi</label>
+                            <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 outline-none focus:border-indigo-500 font-bold text-white transition" value={weightClass} onChange={e=>{setWeightClass(e.target.value); setIsTitleFight(false);}}>
+                                {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-3 bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                            <input type="checkbox" id="titleFight" checked={isTitleFight} onChange={e=>setIsTitleFight(e.target.checked)} className="w-5 h-5 accent-amber-500 rounded cursor-pointer" disabled={titleFightExists} />
+                            <label htmlFor="titleFight" className={`font-black text-sm tracking-wide ${titleFightExists ? 'text-slate-600' : 'text-amber-400 cursor-pointer'}`}>
+                                PEREBUTAN GELAR JUARA {titleFightExists && '(Maksimal 1 per kelas di satu event)'}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 bg-slate-900/80 p-5 rounded-2xl border border-slate-700 relative">
+                        <div className="flex-1 z-10">
+                            <label className="block text-[10px] font-black uppercase tracking-wider text-red-500 mb-2 text-center md:text-left">Sudut Merah</label>
+                            <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
+                                <option value="">Pilih Petarung...</option>
+                                {availableFighters.filter(f=>f.id !== f2Id).map(f => (
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        <div className="flex items-center justify-center py-2 md:py-0 z-10">
+                            <span className="font-black text-slate-600 px-3 text-xl italic">VS</span>
+                        </div>
+
+                        <div className="flex-1 z-10">
+                            <label className="block text-[10px] font-black uppercase tracking-wider text-blue-500 mb-2 text-center md:text-right">Sudut Biru</label>
+                            <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
+                                <option value="">Pilih Petarung...</option>
+                                {availableFighters.filter(f=>f.id !== f1Id).map(f => (
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {f1Id && f2Id && (
+                        <div className="mt-6 text-center bg-slate-900 border border-slate-700 py-4 rounded-2xl shadow-inner mb-6">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Head to Head (Menang - Kalah)</span>
+                            <span className="font-black text-3xl text-white tracking-widest">{checkH2H(f1Id, f2Id)}</span>
+                        </div>
+                    )}
+
+                    {/* Manual Setup Section */}
+                    {f1Id && f2Id && (
+                        <div className="bg-slate-800/60 p-5 rounded-2xl border border-slate-700/50 mb-6">
+                            <div className="flex items-center gap-3 mb-4">
+                                <input type="checkbox" id="manualResult" checked={isManual} onChange={e=>setIsManual(e.target.checked)} className="w-5 h-5 accent-indigo-500 rounded cursor-pointer" />
+                                <label htmlFor="manualResult" className="font-bold text-sm tracking-wide text-indigo-300 cursor-pointer">
+                                    Atur Hasil Pertandingan Secara Manual (Override Simulasi RNG)
+                                </label>
+                            </div>
+                            
+                            {isManual && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in mt-4">
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Pemenang</label>
+                                        <select className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 text-white font-bold" value={manualWinner} onChange={e=>setManualWinner(e.target.value)}>
+                                            <option value="">Pilih...</option>
+                                            <option value={f1Id}>Sudut Merah</option>
+                                            <option value={f2Id}>Sudut Biru</option>
+                                        </select>
+                                    </div>
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Metode Akhir</label>
+                                        <select className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 text-white" value={manualMethod} onChange={e=>setManualMethod(e.target.value)}>
+                                            <option value="KO/TKO">KO/TKO</option>
+                                            <option value="Submission">Submission</option>
+                                            <option value="Decision (Unanimous)">Decision (Unanimous)</option>
+                                            <option value="Decision (Split)">Decision (Split)</option>
+                                            <option value="Decision (Majority)">Decision (Majority)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Berakhir Ronde</label>
+                                        <input type="number" min="1" max={isTitleFight ? 5 : 3} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 text-white text-center font-bold" value={manualRound} onChange={e=>setManualRound(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Waktu</label>
+                                        <input type="text" placeholder="05:00" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-indigo-500 text-white text-center font-bold" value={manualTime} onChange={e=>setManualTime(e.target.value)} />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={handleSubmit}
+                        disabled={!f1Id || !f2Id || (isManual && !manualWinner)}
+                        className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed py-4 rounded-xl font-black mt-2 transition-all shadow-lg text-white text-lg tracking-wide"
+                    >
+                        Simpan Pertandingan
+                    </button>
+                </div>
+            );
+        };
+
+        const EventResultModal = ({ event, gameState }) => (
+            <div className="p-6 md:p-10">
+                <div className="text-center mb-10 pb-6 border-b border-slate-800 relative">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 bg-indigo-900/30 border border-indigo-500/30 px-4 py-1.5 rounded-full mb-4 inline-block shadow-lg">Pekan {event.week} • Tahun {event.year}</span>
+                    <h2 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-2">{event.name}</h2>
+                    <p className="text-emerald-400 font-black tracking-widest text-sm bg-emerald-900/20 inline-block px-4 py-1 rounded-lg border border-emerald-500/20">HASIL RESMI</p>
+                </div>
+                <div className="space-y-4">
+                    {event.matches.map((m, i) => {
+                        const f1 = gameState.fighters.find(f => f.id === m.f1Id);
+                        const f2 = gameState.fighters.find(f => f.id === m.f2Id);
+                        const w = m.result.winnerId === f1.id ? f1 : f2;
+                        const l = m.result.winnerId === f1.id ? f2 : f1;
+                        
+                        const isFotn = event.bonuses?.fotnMatchId === m.id;
+                        const isPotn = event.bonuses?.potnWinnerIds?.includes(w.id);
+
+                        return (
+                            <div key={m.id} className={`bg-slate-900/80 p-5 rounded-2xl border-l-4 ${isFotn ? 'border-orange-500 shadow-lg shadow-orange-500/10' : 'border-emerald-500'} flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden group`}>
+                                <div className={`absolute top-0 right-0 w-32 h-32 rounded-bl-full pointer-events-none ${isFotn ? 'bg-orange-500/10' : 'bg-emerald-500/5'}`}></div>
+                                <div className="flex-1 z-10 w-full">
+                                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                                        {i === 0 && <span className="text-[10px] font-black bg-red-600/20 text-red-400 px-2.5 py-0.5 rounded border border-red-500/30 tracking-wider">MAIN EVENT</span>}
+                                        <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded uppercase tracking-wider">{m.weightClass}</span>
+                                        {m.isTitleFight && <span className="text-[10px] font-black text-amber-400 bg-amber-900/30 px-2.5 py-0.5 rounded tracking-widest border border-amber-500/30">TITLE BOUT</span>}
+                                        {isFotn && <span className="text-[10px] font-black text-orange-400 bg-orange-900/30 px-2.5 py-0.5 rounded tracking-widest border border-orange-500/30 flex items-center gap-1"><i data-lucide="flame" className="w-3 h-3"></i> FOTN</span>}
+                                    </div>
+                                    <p className="font-black text-xl text-white flex items-center gap-2 flex-wrap">
+                                        <span className="text-emerald-400">{w.lastName}</span> 
+                                        {isPotn && <span className="bg-yellow-500/20 text-yellow-400 text-[9px] px-1.5 py-0.5 rounded uppercase border border-yellow-500/30 font-black tracking-widest inline-flex items-center gap-1" title="Performance of the Night"><i data-lucide="award" className="w-3 h-3"></i> POTN</span>}
+                                        <span className="text-sm font-medium text-slate-500 mx-1">def.</span> 
+                                        <span className="text-slate-400">{l.lastName}</span>
+                                    </p>
+                                </div>
+                                <div className="text-left md:text-right bg-slate-950 px-5 py-3 rounded-xl border border-slate-800 z-10 w-full md:w-auto shadow-inner">
+                                    <p className="text-base font-black text-white">{m.result.method}</p>
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">Ronde {m.result.round} • {m.result.time}</p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
