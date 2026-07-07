@@ -364,6 +364,85 @@
                 showToast('Pertandingan berhasil masuk card!');
             };
 
+            const autoFillEvent = (eventId) => {
+                setGameState(prev => {
+                    const newEvents = [...prev.events];
+                    const eventIndex = newEvents.findIndex(e => e.id === eventId);
+                    const evt = newEvents[eventIndex];
+
+                    if (evt.type === 'Turnamen') return prev; // Turnamen sudah diurus otomatis
+
+                    const scheduledFighterIds = newEvents.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
+                    let availableFighters = prev.fighters.filter(f => !f.isRetired && !scheduledFighterIds.includes(f.id));
+
+                    // Acak urutan awal petarung
+                    availableFighters = availableFighters.sort(() => 0.5 - Math.random());
+
+                    let newMatches = [];
+                    let matchesNeeded = 5 - evt.matches.length; // Maksimal 5 pertandingan per acara
+
+                    if (matchesNeeded <= 0) {
+                        setTimeout(() => showToast('Card pertandingan sudah penuh (Maks 5 laga)!', 'error'), 10);
+                        return prev;
+                    }
+
+                    while (availableFighters.length >= 2 && matchesNeeded > 0) {
+                        const f1 = availableFighters[0];
+                        availableFighters.splice(0, 1); // Hapus f1 dari daftar tersedia
+
+                        // Cari lawan valid (kelas berat sama)
+                        let opponents = availableFighters.filter(f => f.weightClass === f1.weightClass);
+                        
+                        if (opponents.length === 0) continue;
+
+                        // Sortir lawan: Prioritaskan H2H terendah (belum pernah bertemu)
+                        opponents.sort((a, b) => {
+                            const h2hA = f1.history.filter(h => h.opponentId === a.id).length;
+                            const h2hB = f1.history.filter(h => h.opponentId === b.id).length;
+                            if (h2hA === h2hB) return 0.5 - Math.random(); // Acak jika jumlah pertemuannya sama
+                            return h2hA - h2hB;
+                        });
+
+                        const f2 = opponents[0];
+                        
+                        // Hapus f2 dari daftar tersedia
+                        const f2Index = availableFighters.findIndex(f => f.id === f2.id);
+                        availableFighters.splice(f2Index, 1);
+
+                        newMatches.push({
+                            id: generateId(),
+                            weightClass: f1.weightClass,
+                            isTitleFight: false,
+                            f1Id: f1.id,
+                            f2Id: f2.id,
+                            result: null
+                        });
+                        matchesNeeded--;
+                    }
+
+                    if (newMatches.length === 0) {
+                         setTimeout(() => showToast('Tidak ada pasangan petarung yang tersedia (kelas berat tidak cocok)!', 'error'), 10);
+                         return prev;
+                    }
+
+                    evt.matches = [...evt.matches, ...newMatches];
+
+                    // Update nama acara jika ini adalah pertandingan pertama yang masuk
+                    if (evt.matches.length === newMatches.length && evt.matches.length > 0) {
+                        const f1 = prev.fighters.find(f => f.id === evt.matches[0].f1Id);
+                        const f2 = prev.fighters.find(f => f.id === evt.matches[0].f2Id);
+                        if (evt.type === 'Fight Week') {
+                            evt.name = `Fight Week ${evt.week} ${evt.year} ${f1.lastName} vs ${f2.lastName}`;
+                        } else {
+                            evt.name = `Fighter Ultimate ${prev.ppvCount} ${f1.lastName} vs ${f2.lastName}`;
+                        }
+                    }
+
+                    setTimeout(() => showToast(`${newMatches.length} Pertandingan acak ditambahkan!`), 10);
+                    return { ...prev, events: newEvents };
+                });
+            };
+
             const processRankings = (winner, loser, weightClass, isTitleFight, prevRanks, prevChamps, currentFighters) => {
                 let newChamps = { ...prevChamps };
                 let newRanksList = [...prevRanks[weightClass]];
@@ -398,7 +477,8 @@
                             }
                         }
                     } else if (winnerIdx === -1 && loserIdx === -1) {
-                        if(newRanksList.length < 10 && !newRanksList.includes(winner.id)) {
+                        const totalFights = winner.record.wins + winner.record.losses + winner.record.draws;
+                        if(totalFights >= 5 && winner.record.wins >= 3 && !newRanksList.includes(winner.id)) {
                             newRanksList.push(winner.id);
                         }
                     }
@@ -423,8 +503,6 @@
                     }
                 } while (swapped);
 
-                if (newRanksList.length > 10) newRanksList = newRanksList.slice(0, 10);
-
                 newRanksList = newRanksList.filter(id => {
                     const f = currentFighters.find(f => f.id === id);
                     if (!f) return false;
@@ -433,29 +511,28 @@
                     return !is3Losses;
                 });
 
-                if (newRanksList.length < 10) {
-                    let unrankedFighters = currentFighters.filter(f => {
-                        if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
-                        
-                        // Syarat baru: Minimal 5 pertandingan dan minimal 3 kemenangan
-                        const totalFights = f.record.wins + f.record.losses + f.record.draws;
-                        if (totalFights < 5 || f.record.wins < 3) return false;
+                // Regenerasi: Masukkan semua petarung unranked yang memenuhi syarat ke peringkat bawah
+                let unrankedFighters = currentFighters.filter(f => {
+                    if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
+                    
+                    // Syarat: Minimal 5 pertandingan dan minimal 3 kemenangan
+                    const totalFights = f.record.wins + f.record.losses + f.record.draws;
+                    if (totalFights < 5 || f.record.wins < 3) return false;
 
-                        const last3 = f.history.slice(-3);
-                        const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
-                        return !is3Losses;
-                    });
+                    const last3 = f.history.slice(-3);
+                    const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
+                    return !is3Losses;
+                });
 
-                    unrankedFighters.sort((a, b) => {
-                        const eloA = (a.record.wins - a.record.losses) + getFighterMomentum(a.history);
-                        const eloB = (b.record.wins - b.record.losses) + getFighterMomentum(b.history);
-                        return eloB - eloA;
-                    });
+                unrankedFighters.sort((a, b) => {
+                    const eloA = (a.record.wins - a.record.losses) + getFighterMomentum(a.history);
+                    const eloB = (b.record.wins - b.record.losses) + getFighterMomentum(b.history);
+                    return eloB - eloA;
+                });
 
-                    while (newRanksList.length < 10 && unrankedFighters.length > 0) {
-                        const topProspect = unrankedFighters.shift();
-                        newRanksList.push(topProspect.id);
-                    }
+                while (unrankedFighters.length > 0) {
+                    const topProspect = unrankedFighters.shift();
+                    newRanksList.push(topProspect.id);
                 }
 
                 return { champs: newChamps, ranks: { ...prevRanks, [weightClass]: newRanksList } };
@@ -919,9 +996,14 @@
                                             </div>
                                             <div className="flex flex-wrap gap-2 w-full md:w-auto">
                                                 {evt.type !== 'Turnamen' && (
-                                                    <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
-                                                        <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
-                                                    </button>
+                                                    <>
+                                                        <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
+                                                            <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
+                                                        </button>
+                                                        <button onClick={() => autoFillEvent(evt.id)} className="bg-cyan-700 hover:bg-cyan-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center" title="Isi jadwal otomatis memprioritaskan yang belum pernah bertemu">
+                                                            <i data-lucide="wand-2" className="w-4 h-4"></i> Isi Acak
+                                                        </button>
+                                                    </>
                                                 )}
                                                 <button onClick={() => simulateEvent(evt.id)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
                                                     <i data-lucide="play" className="w-4 h-4"></i> Simulasi
@@ -1015,27 +1097,33 @@
                                         </div>
                                         
                                         {/* Contender Slots */}
-                                        {Array.from({length: 10}).map((_, i) => {
-                                            const fId = gameState.rankings[wc][i];
-                                            const f = fId ? gameState.fighters.find(f => f.id === fId) : null;
-                                            return (
-                                                <div 
-                                                    key={i} 
-                                                    className="p-4 border-b border-slate-800/50 flex items-center hover:bg-slate-800/80 transition cursor-pointer group"
-                                                    onClick={() => f && setModal({type: 'fighterDetail', data: f})}
-                                                >
-                                                    <div className="w-8 font-black text-slate-600 text-center text-lg">{i + 1}</div>
-                                                    <div className="ml-5 flex-1 flex justify-between items-center">
-                                                        {f ? (
-                                                            <>
-                                                                <p className="font-bold text-slate-300 group-hover:text-white transition">{f.lastName}</p>
-                                                                <span className="text-xs font-semibold text-slate-500 bg-slate-900 px-2 py-1 rounded-md">{f.record.wins}-{f.record.losses}</span>
-                                                            </>
-                                                        ) : <p className="text-slate-700 text-sm font-medium">-- Kosong --</p>}
+                                        {gameState.rankings[wc].slice(0, 10).length === 0 ? (
+                                            <div className="p-4 border-b border-slate-800/50 text-center text-slate-500 text-sm font-medium py-8">
+                                                Belum ada penantang yang memenuhi kualifikasi (Min. 5 Laga & 3 Menang).
+                                            </div>
+                                        ) : (
+                                            gameState.rankings[wc].slice(0, 10).map((fId, i) => {
+                                                const f = gameState.fighters.find(f => f.id === fId);
+                                                if (!f) return null;
+                                                return (
+                                                    <div 
+                                                        key={fId} 
+                                                        className="p-4 border-b border-slate-800/50 flex items-center hover:bg-slate-800/80 transition cursor-pointer group"
+                                                        onClick={() => setModal({type: 'fighterDetail', data: f})}
+                                                    >
+                                                        <div className="w-8 font-black text-slate-600 text-center text-lg">{i + 1}</div>
+                                                        <div className="ml-5 flex-1 flex justify-between items-center">
+                                                            <p className="font-bold text-slate-300 group-hover:text-white transition">
+                                                                {(f.titleWins > 0 || f.titleDefenses > 0) && <span title="Pernah Meraih Gelar Juara" className="text-amber-400 mr-1 text-sm">👑</span>}
+                                                                {(f.badges && f.badges.includes('Wonderkid')) && <span title="Wonderkid (Pemenang Turnamen)" className="text-purple-400 mr-1 text-sm">🌟</span>}
+                                                                {f.lastName}
+                                                            </p>
+                                                            <span className="text-xs font-semibold text-slate-500 bg-slate-900 px-2 py-1 rounded-md">{f.record.wins}-{f.record.losses}</span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )
-                                        })}
+                                                )
+                                            })
+                                        )}
                                     </div>
                                 </div>
                             ))}
