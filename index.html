@@ -537,7 +537,8 @@
                                 { id: 'matchmaker', icon: 'calendar', label: 'Matchmaker' },
                                 { id: 'rankings', icon: 'bar-chart-2', label: 'Rankings' },
                                 { id: 'history', icon: 'clock', label: 'Riwayat Acara' },
-                                { id: 'records', icon: 'award', label: 'Hall of Fame' }
+                                { id: 'records', icon: 'award', label: 'Hall of Fame' },
+                                { id: 'settings', icon: 'settings', label: 'Pengaturan' }
                             ].map(item => (
                                 <button 
                                     key={item.id}
@@ -567,7 +568,8 @@
                             { id: 'matchmaker', icon: 'calendar' },
                             { id: 'rankings', icon: 'bar-chart-2' },
                             { id: 'history', icon: 'clock' },
-                            { id: 'records', icon: 'award' }
+                            { id: 'records', icon: 'award' },
+                            { id: 'settings', icon: 'settings' }
                         ].map(item => (
                             <button 
                                 key={item.id}
@@ -935,16 +937,6 @@
                 if (allF.length === 0) return (
                     <div className="p-10 pt-20 h-full flex flex-col justify-between">
                         <p className="text-slate-500">Belum ada data petarung untuk kalkulasi rekor.</p>
-                        
-                        <div className="mt-12 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
-                            <div>
-                                <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
-                                <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan lalu mulai dari awal.</p>
-                            </div>
-                            <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
-                                <i data-lucide="trash-2" className="w-5 h-5"></i> Hapus Save Data
-                            </button>
-                        </div>
                     </div>
                 );
 
@@ -1106,16 +1098,119 @@
                                 )}
                             </div>
                         )}
+                    </div>
+                );
+            };
 
-                        {/* Zona Berbahaya - Fitur Reset Data */}
-                        <div className="mt-12 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
-                            <div>
-                                <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
-                                <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk juara) lalu mulai dari awal.</p>
+            const SettingsMenu = () => {
+                const [importText, setImportText] = useState('');
+
+                useEffect(() => {
+                    lucide.createIcons();
+                }, [importText]);
+
+                const handleExportCopy = () => {
+                    const dataStr = JSON.stringify(gameState);
+                    const base64 = btoa(unescape(encodeURIComponent(dataStr)));
+                    const textArea = document.createElement("textarea");
+                    textArea.value = base64;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        showToast('Kode Save berhasil disalin!');
+                    } catch (err) {
+                        showToast('Gagal menyalin otomatis. Silakan blok & salin manual.', 'error');
+                    }
+                    document.body.removeChild(textArea);
+                };
+
+                const handleExportFile = () => {
+                    const dataStr = JSON.stringify(gameState);
+                    const base64 = btoa(unescape(encodeURIComponent(dataStr)));
+                    const blob = new Blob([base64], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `UF_SaveData_Y${gameState.currentYear}_W${gameState.currentWeek}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('File Save berhasil diunduh!');
+                };
+
+                const handleImport = () => {
+                    if(!importText.trim()) return showToast('Masukkan kode save terlebih dahulu!', 'error');
+                    try {
+                        const dataStr = decodeURIComponent(escape(atob(importText.trim())));
+                        const parsed = JSON.parse(dataStr);
+                        if(parsed && parsed.fighters && parsed.events) {
+                            setGameState(parsed);
+                            showToast('Data Save berhasil dimuat!');
+                            setImportText('');
+                        } else {
+                            showToast('Format data save tidak cocok!', 'error');
+                        }
+                    } catch(e) {
+                        showToast('Kode save tidak valid atau rusak!', 'error');
+                    }
+                };
+
+                return (
+                    <div className="animate-fade-in p-6 md:p-10 pb-24 max-w-4xl mx-auto">
+                        <div className="mb-8 pt-10 md:pt-0">
+                            <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Pengaturan Game</h2>
+                            <p className="text-slate-400 mt-1">Kelola data permainan, ekspor/impor save, dan sinkronisasi perangkat.</p>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="glass-panel p-6 rounded-3xl border border-slate-700/50 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none">
+                                    <i data-lucide="upload-cloud" className="w-32 h-32 text-indigo-500"></i>
+                                </div>
+                                <h3 className="font-black text-xl text-white mb-2 flex items-center gap-2 z-10 relative"><i data-lucide="upload" className="w-5 h-5 text-indigo-400"></i> Export Save Data (Simpan Data)</h3>
+                                <p className="text-slate-400 text-sm mb-6 z-10 relative">Amankan progres promotor Anda saat ini dengan membuat cadangan. Anda bisa menyalinnya sebagai teks kode atau mengunduhnya sebagai file <b>.txt</b> untuk dikirim ke HP/perangkat lain.</p>
+                                
+                                <div className="flex flex-col sm:flex-row gap-3 z-10 relative">
+                                    <button onClick={handleExportCopy} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
+                                        <i data-lucide="copy" className="w-5 h-5"></i> Salin Kode Save
+                                    </button>
+                                    <button onClick={handleExportFile} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-6 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-slate-700">
+                                        <i data-lucide="download" className="w-5 h-5"></i> Download File (.txt)
+                                    </button>
+                                </div>
                             </div>
-                            <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
-                                <i data-lucide="trash-2" className="w-5 h-5"></i> Hapus Save Data
-                            </button>
+
+                            <div className="glass-panel p-6 rounded-3xl border border-slate-700/50 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none">
+                                    <i data-lucide="download-cloud" className="w-32 h-32 text-emerald-500"></i>
+                                </div>
+                                <h3 className="font-black text-xl text-white mb-2 flex items-center gap-2 z-10 relative"><i data-lucide="download" className="w-5 h-5 text-emerald-400"></i> Import Save Data (Muat Data)</h3>
+                                <p className="text-slate-400 text-sm mb-4 z-10 relative">Punya data save dari HP/perangkat lain? Tempel (paste) teks kode save panjang tersebut di bawah ini untuk melanjutkan permainan.</p>
+                                
+                                <textarea 
+                                    className="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-4 text-white text-sm font-mono focus:border-emerald-500 outline-none transition mb-4 z-10 relative custom-scrollbar" 
+                                    rows="4" 
+                                    placeholder="Tempel/Paste teks base64 kode save di sini..."
+                                    value={importText}
+                                    onChange={(e) => setImportText(e.target.value)}
+                                ></textarea>
+                                
+                                <button onClick={handleImport} className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-8 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 z-10 relative">
+                                    <i data-lucide="check-circle" className="w-5 h-5"></i> Muat & Lanjutkan Game
+                                </button>
+                            </div>
+
+                            <div className="mt-8 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
+                                <div>
+                                    <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
+                                    <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
+                                </div>
+                                <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
+                                    <i data-lucide="trash-2" className="w-5 h-5"></i> Reset Semua Data
+                                </button>
+                            </div>
                         </div>
                     </div>
                 );
@@ -1169,6 +1264,7 @@
                             {activeTab === 'rankings' && <RankingsMenu />}
                             {activeTab === 'history' && <HistoryMenu />}
                             {activeTab === 'records' && <RecordsMenu />}
+                            {activeTab === 'settings' && <SettingsMenu />}
                         </div>
                     </div>
                     {renderModal()}
@@ -1543,20 +1639,6 @@
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f1Id).map(f => (
                                     <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
-                                ))}
-                            </select>
-                        </div>
-                        
-                        <div className="flex items-center justify-center py-2 md:py-0 z-10">
-                            <span className="font-black text-slate-600 px-3 text-xl italic">VS</span>
-                        </div>
-
-                        <div className="flex-1 z-10">
-                            <label className="block text-[10px] font-black uppercase tracking-wider text-blue-500 mb-2 text-center md:text-right">Sudut Biru</label>
-                            <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
-                                <option value="">Pilih Petarung...</option>
-                                {availableFighters.filter(f=>f.id !== f1Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
                                 ))}
                             </select>
                         </div>
