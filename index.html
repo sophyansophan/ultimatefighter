@@ -518,14 +518,6 @@
                     }
                 } while (swapped);
 
-                newRanksList = newRanksList.filter(id => {
-                    const f = currentFighters.find(f => f.id === id);
-                    if (!f) return false;
-                    const last3 = f.history.slice(-3);
-                    const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
-                    return !is3Losses;
-                });
-
                 // Regenerasi: Masukkan semua petarung unranked yang memenuhi syarat ke peringkat bawah
                 let unrankedFighters = currentFighters.filter(f => {
                     if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
@@ -534,9 +526,7 @@
                     const totalFights = f.record.wins + f.record.losses + f.record.draws;
                     if (totalFights < 5 || f.record.wins < 3) return false;
 
-                    const last3 = f.history.slice(-3);
-                    const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
-                    return !is3Losses;
+                    return true;
                 });
 
                 unrankedFighters.sort((a, b) => {
@@ -729,15 +719,18 @@
                             const totalFights = wins + losses + fighter.record.draws;
                             let shouldRetire = false;
 
-                            // Syarat rekor awal yang buruk (PHK Dini)
-                            if (totalFights === 1 && wins === 0 && losses === 1) shouldRetire = true; // Rekor 0-1
-                            if (totalFights === 2 && wins === 0 && losses === 2) shouldRetire = true; // Rekor 0-2
-                            if (totalFights === 2 && wins === 1 && losses === 1) shouldRetire = true; // Rekor 1-1
-                            if (totalFights === 4 && wins === 2 && losses === 2) shouldRetire = true; // Rekor 2-2
+                            // Syarat 8 kali kalah beruntun
+                            const last8 = fighter.history.slice(-8);
+                            if (last8.length === 8 && last8.every(h => h.result === 'L')) shouldRetire = true;
 
-                            // Syarat 5 kali kalah beruntun
-                            const last5 = fighter.history.slice(-5);
-                            if (last5.length === 5 && last5.every(h => h.result === 'L')) shouldRetire = true;
+                            // Syarat batas rasio kekalahan awal
+                            if (totalFights <= 10 && losses >= 5) {
+                                shouldRetire = true;
+                            } else if (totalFights <= 15 && losses >= 8) {
+                                shouldRetire = true;
+                            } else if (totalFights <= 20 && losses >= 10) {
+                                shouldRetire = true;
+                            }
 
                             // Eksekusi Pensiun & Pencopotan Posisi
                             if (shouldRetire) {
