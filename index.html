@@ -1471,9 +1471,25 @@
         };
 
         const AddEventModal = ({ onSubmit, defaultYear, defaultWeek }) => {
+            // Hitung waktu minimal (1 pekan setelah waktu saat ini)
+            const initialYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
+            const initialWeek = defaultWeek === 52 ? 1 : defaultWeek + 1;
+
             const [type, setType] = useState('Fight Week');
-            const [week, setWeek] = useState(defaultWeek);
-            const [year, setYear] = useState(defaultYear);
+            const [week, setWeek] = useState(initialWeek);
+            const [year, setYear] = useState(initialYear);
+
+            // Tentukan batas minimal input agar tidak bisa mundur
+            const minYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
+            const minWeek = parseInt(year) === defaultYear ? defaultWeek + 1 : 1;
+
+            // Cegah error jika user mengubah tahun secara manual ke tahun sekarang 
+            // namun pekannya masih di bawah pekan minimum
+            useEffect(() => {
+                if (parseInt(year) === defaultYear && parseInt(week) <= defaultWeek) {
+                    setWeek(defaultWeek + 1);
+                }
+            }, [year, defaultYear, defaultWeek, week]);
 
             return (
                 <div className="p-6 md:p-8">
@@ -1489,11 +1505,12 @@
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Pekan Ke-</label>
-                                <input type="number" min="1" max="52" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={week} onChange={e=>setWeek(e.target.value)} />
+                                <input type="number" min={minWeek} max="52" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={week} onChange={e=>setWeek(e.target.value)} />
+                                <p className="text-[10px] text-slate-500 mt-1">Min: Pekan {minWeek}</p>
                             </div>
                             <div>
                                 <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Tahun</label>
-                                <input type="number" min="2026" required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={year} onChange={e=>setYear(e.target.value)} />
+                                <input type="number" min={minYear} required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={year} onChange={e=>setYear(e.target.value)} />
                             </div>
                         </div>
                         <button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
