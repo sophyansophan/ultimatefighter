@@ -1788,19 +1788,19 @@
                         </div>
                         <div className="flex gap-2 w-full md:w-auto">
                             {!fighter.isRetired && (
-                                <button onClick={onEdit} className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition flex items-center gap-2 justify-center border border-slate-700">
-                                    <i data-lucide="edit-2" className="w-4 h-4"></i> Edit
+                                <button onClick={onEdit} className="flex-1 md:flex-none bg-slate-800 hover:bg-slate-700 text-white p-3 md:px-5 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-slate-700" title="Edit Data Fighter">
+                                    <i data-lucide="edit-2" className="w-5 h-5"></i> <span className="hidden md:inline text-sm">Edit</span>
                                 </button>
                             )}
                             {!fighter.isRetired && (
                                 retireConfirm ? (
                                     <div className="flex-1 md:flex-none flex items-center bg-red-900/20 rounded-xl border border-red-900/50 overflow-hidden">
-                                        <button onClick={() => onRetire(fighter.id)} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-3 py-2.5 font-bold text-xs transition">Konfirmasi</button>
-                                        <button onClick={() => setRetireConfirm(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2.5 font-bold text-xs transition border-l border-red-900/50">Batal</button>
+                                        <button onClick={() => onRetire(fighter.id)} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-3 py-3 font-bold transition" title="Konfirmasi Pensiun"><i data-lucide="check" className="w-5 h-5 mx-auto"></i></button>
+                                        <button onClick={() => setRetireConfirm(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-3 font-bold transition border-l border-red-900/50" title="Batal"><i data-lucide="x" className="w-5 h-5 mx-auto"></i></button>
                                     </div>
                                 ) : (
-                                    <button onClick={() => setRetireConfirm(true)} className="flex-1 md:flex-none bg-red-900/30 hover:bg-red-800 text-red-300 px-4 py-2.5 rounded-xl font-bold text-sm transition border border-red-900/50">
-                                        Pensiunkan
+                                    <button onClick={() => setRetireConfirm(true)} className="flex-1 md:flex-none bg-red-900/30 hover:bg-red-800 text-red-300 p-3 md:px-5 rounded-xl font-bold transition border border-red-900/50 flex items-center justify-center gap-2" title="Pensiunkan Fighter">
+                                        <i data-lucide="user-minus" className="w-5 h-5"></i> <span className="hidden md:inline text-sm">Pensiunkan</span>
                                     </button>
                                 )
                             )}
