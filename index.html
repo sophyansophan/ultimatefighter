@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -49,20 +48,16 @@
     <div id="root"></div>
 
     <script>
-        // Mendaftarkan Service Worker Eksternal untuk update & Offline PWA
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
                     .then(registration => {
                         console.log('ServiceWorker berhasil didaftarkan pada scope:', registration.scope);
-                        
-                        // Deteksi jika ada update Service Worker yang tersedia
                         registration.addEventListener('updatefound', () => {
                             const newWorker = registration.installing;
                             newWorker.addEventListener('statechange', () => {
                                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                                     console.log('Update baru tersedia!');
-                                    // Memaksa halaman memuat ulang secara otomatis di latar belakang untuk mendapatkan versi baru
                                     window.location.reload(); 
                                 }
                             });
@@ -110,12 +105,6 @@
             return { year: newY, week: newW };
         };
 
-        const getFighterMomentum = (history) => {
-            if (!history || history.length === 0) return 0;
-            const last5 = history.slice(-5);
-            return last5.reduce((sum, h) => sum + (h.momentumPoints !== undefined ? h.momentumPoints : (h.result === 'W' ? 10 : -5)), 0);
-        };
-
         const generateFighter = (weightClass, isRandom, customData, currentYear) => {
             const id = generateId();
             if (isRandom) {
@@ -136,6 +125,7 @@
                         power: randomInt(55, 90)
                     },
                     record: { wins: 0, losses: 0, draws: 0 },
+                    elo: 1000, // INITIAL ELO
                     isRetired: false,
                     titleWins: 0,
                     titleDefenses: 0,
@@ -148,6 +138,7 @@
                 id,
                 ...customData,
                 record: { wins: 0, losses: 0, draws: 0 },
+                elo: 1000, // INITIAL ELO
                 isRetired: false,
                 titleWins: 0,
                 titleDefenses: 0,
@@ -194,19 +185,20 @@
         const App = () => {
             const [activeTab, setActiveTab] = useState('roster');
             
-            // MENGGUNAKAN LOCAL STORAGE UNTUK MENYIMPAN PROGRES PERMAINAN
             const [gameState, setGameState] = useState(() => {
                 const savedData = localStorage.getItem('uf_save_data');
                 if (savedData) {
                     try {
                         const parsed = JSON.parse(savedData);
-                        // Pastikan property baru ada untuk save lama
+                        // Patch: Pastikan petarung dari save lama mendapatkan field ELO
+                        if (parsed.fighters) {
+                            parsed.fighters = parsed.fighters.map(f => ({ ...f, elo: f.elo || 1000 }));
+                        }
                         return { ...parsed, championshipHistory: parsed.championshipHistory || [] };
                     } catch (e) {
                         console.error('Data tersimpan korup. Memulai ulang permainan baru.', e);
                     }
                 }
-                // Nilai Default (Game Baru)
                 return {
                     currentYear: 2026,
                     currentWeek: 1,
@@ -223,7 +215,6 @@
             const [modal, setModal] = useState(null); 
             const [toast, setToast] = useState(null);
 
-            // AUTO-SAVE: Menyimpan ke memori setiap kali gameState berubah
             useEffect(() => {
                 localStorage.setItem('uf_save_data', JSON.stringify(gameState));
             }, [gameState]);
@@ -286,6 +277,8 @@
             };
 
             const addEvent = (eventData) => {
+                // Notifikasi error bentrok dihapus, karena form AddEventModal kini mengatur waktunya secara otomatis
+
                 if (eventData.type === 'Turnamen') {
                     const wc = eventData.weightClass;
                     const scheduledFighterIds = gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
@@ -388,7 +381,14 @@
                     if (evt.type === 'Turnamen') return prev; // Turnamen sudah diurus otomatis
 
                     const scheduledFighterIds = newEvents.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
-                    let availableFighters = prev.fighters.filter(f => !f.isRetired && !scheduledFighterIds.includes(f.id));
+                    const championIds = Object.values(prev.champions); // Ambil semua ID juara bertahan
+                    
+                    // Filter: Tidak pensiun, belum ada jadwal, DAN BUKAN juara bertahan
+                    let availableFighters = prev.fighters.filter(f => 
+                        !f.isRetired && 
+                        !scheduledFighterIds.includes(f.id) && 
+                        !championIds.includes(f.id)
+                    );
 
                     // Acak urutan awal petarung
                     availableFighters = availableFighters.sort(() => 0.5 - Math.random());
@@ -403,24 +403,19 @@
 
                     while (availableFighters.length >= 2 && matchesNeeded > 0) {
                         const f1 = availableFighters[0];
-                        availableFighters.splice(0, 1); // Hapus f1 dari daftar tersedia
+                        availableFighters.splice(0, 1);
 
-                        // Cari lawan valid (kelas berat sama)
                         let opponents = availableFighters.filter(f => f.weightClass === f1.weightClass);
-                        
                         if (opponents.length === 0) continue;
 
-                        // Sortir lawan: Prioritaskan H2H terendah (belum pernah bertemu)
                         opponents.sort((a, b) => {
                             const h2hA = f1.history.filter(h => h.opponentId === a.id).length;
                             const h2hB = f1.history.filter(h => h.opponentId === b.id).length;
-                            if (h2hA === h2hB) return 0.5 - Math.random(); // Acak jika jumlah pertemuannya sama
+                            if (h2hA === h2hB) return 0.5 - Math.random();
                             return h2hA - h2hB;
                         });
 
                         const f2 = opponents[0];
-                        
-                        // Hapus f2 dari daftar tersedia
                         const f2Index = availableFighters.findIndex(f => f.id === f2.id);
                         availableFighters.splice(f2Index, 1);
 
@@ -442,7 +437,6 @@
 
                     evt.matches = [...evt.matches, ...newMatches];
 
-                    // Update nama acara jika ini adalah pertandingan pertama yang masuk
                     if (evt.matches.length === newMatches.length && evt.matches.length > 0) {
                         const f1 = prev.fighters.find(f => f.id === evt.matches[0].f1Id);
                         const f2 = prev.fighters.find(f => f.id === evt.matches[0].f2Id);
@@ -456,91 +450,6 @@
                     setTimeout(() => showToast(`${newMatches.length} Pertandingan acak ditambahkan!`), 10);
                     return { ...prev, events: newEvents };
                 });
-            };
-
-            const processRankings = (winner, loser, weightClass, isTitleFight, prevRanks, prevChamps, currentFighters) => {
-                let newChamps = { ...prevChamps };
-                let newRanksList = [...prevRanks[weightClass]];
-
-                if (isTitleFight) {
-                    if (winner.id !== prevChamps[weightClass]) {
-                        const oldChampId = prevChamps[weightClass];
-                        newChamps[weightClass] = winner.id;
-                        newRanksList = newRanksList.filter(id => id !== winner.id);
-                        if (oldChampId) newRanksList.unshift(oldChampId);
-                    }
-                } else {
-                    const winnerIdx = newRanksList.indexOf(winner.id);
-                    let loserIdx = newRanksList.indexOf(loser.id);
-
-                    if (winnerIdx === -1 && loserIdx !== -1) {
-                        newRanksList.splice(loserIdx, 0, winner.id);
-                    } else if (winnerIdx !== -1 && loserIdx !== -1 && winnerIdx > loserIdx) {
-                        newRanksList.splice(winnerIdx, 1);
-                        newRanksList.splice(loserIdx, 0, winner.id);
-                    } else if (winnerIdx !== -1 && loserIdx !== -1 && winnerIdx < loserIdx) {
-                        if (winnerIdx > 0) {
-                            const guyAboveId = newRanksList[winnerIdx - 1];
-                            const guyAbove = currentFighters.find(f => f.id === guyAboveId);
-                            if (guyAbove) {
-                                const guyAboveMomentum = getFighterMomentum(guyAbove.history);
-                                const winnerMomentum = getFighterMomentum(winner.history);
-                                if (guyAboveMomentum < winnerMomentum && guyAboveMomentum < 0) {
-                                    newRanksList[winnerIdx - 1] = winner.id;
-                                    newRanksList[winnerIdx] = guyAboveId;
-                                }
-                            }
-                        }
-                    } else if (winnerIdx === -1 && loserIdx === -1) {
-                        const totalFights = winner.record.wins + winner.record.losses + winner.record.draws;
-                        if(totalFights >= 5 && winner.record.wins >= 3 && !newRanksList.includes(winner.id)) {
-                            newRanksList.push(winner.id);
-                        }
-                    }
-                }
-
-                let swapped;
-                do {
-                    swapped = false;
-                    for (let i = 0; i < newRanksList.length - 1; i++) {
-                        const f1 = currentFighters.find(f => f.id === newRanksList[i]);
-                        const f2 = currentFighters.find(f => f.id === newRanksList[i+1]);
-                        
-                        if (f1 && f2) {
-                            const m1 = getFighterMomentum(f1.history);
-                            const m2 = getFighterMomentum(f2.history);
-                            if (m1 < 0 && m1 < m2) {
-                                newRanksList[i] = f2.id;
-                                newRanksList[i+1] = f1.id;
-                                swapped = true;
-                            }
-                        }
-                    }
-                } while (swapped);
-
-                // Regenerasi: Masukkan semua petarung unranked yang memenuhi syarat ke peringkat bawah
-                let unrankedFighters = currentFighters.filter(f => {
-                    if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
-                    
-                    // Syarat: Minimal 5 pertandingan dan minimal 3 kemenangan
-                    const totalFights = f.record.wins + f.record.losses + f.record.draws;
-                    if (totalFights < 5 || f.record.wins < 3) return false;
-
-                    return true;
-                });
-
-                unrankedFighters.sort((a, b) => {
-                    const eloA = (a.record.wins - a.record.losses) + getFighterMomentum(a.history);
-                    const eloB = (b.record.wins - b.record.losses) + getFighterMomentum(b.history);
-                    return eloB - eloA;
-                });
-
-                while (unrankedFighters.length > 0) {
-                    const topProspect = unrankedFighters.shift();
-                    newRanksList.push(topProspect.id);
-                }
-
-                return { champs: newChamps, ranks: { ...prevRanks, [weightClass]: newRanksList } };
             };
 
             const simulateEvent = (eventId) => {
@@ -565,7 +474,14 @@
                     let currentRanks = { ...prev.rankings };
                     let currentChampionshipHistory = [...(prev.championshipHistory || [])];
 
-                    // Fungsi Helper Internal untuk memproses 1 pertandingan
+                    const getMethodMultiplier = (method, round) => {
+                        if (method.includes('KO') || method.includes('Submission')) {
+                            return round <= 2 ? 1.5 : 1.3;
+                        }
+                        if (method === 'Decision (Unanimous)') return 1.0;
+                        return 0.8; // Split atau Majority
+                    };
+
                     const executeSingleMatch = (matchData, stageName) => {
                         const f1 = currentFighters.find(f => f.id === matchData.f1Id);
                         const f2 = currentFighters.find(f => f.id === matchData.f2Id);
@@ -580,16 +496,23 @@
                         loser.record.losses += 1;
                         loser.currentStreak = 0;
 
+                        // --- KALKULASI ELO RATING ---
+                        const basePoints = matchData.isTitleFight ? 40 : 32;
+                        const multiplier = getMethodMultiplier(result.method, result.round);
+                        const opponentBonus = Math.round(loser.elo * 0.02);
+                        const pointsGained = Math.round((basePoints * multiplier) + opponentBonus);
+
+                        winner.elo += pointsGained;
+                        loser.elo = Math.max(100, loser.elo - pointsGained); // Jangan sampai minus
+
                         // --- FITUR PERKEMBANGAN ATRIBUT DINAMIS ---
                         const applyStatChange = (stats, isWin) => {
                             const newStats = { ...stats };
                             ['striking', 'grappling', 'stamina', 'power'].forEach(attr => {
                                 if (isWin) {
-                                    // Menang: Naik 2% (minimal 1 poin), maksimal stat 100
                                     const increase = Math.max(1, Math.round(stats[attr] * 0.02));
                                     newStats[attr] = Math.min(100, stats[attr] + increase);
                                 } else {
-                                    // Kalah: Turun 1% (minimal 1 poin), minimal stat 1
                                     const decrease = Math.max(1, Math.round(stats[attr] * 0.01));
                                     newStats[attr] = Math.max(1, stats[attr] - decrease);
                                 }
@@ -603,16 +526,12 @@
                         if (matchData.isTitleFight) {
                             if (currentChamps[matchData.weightClass] === winner.id) {
                                 winner.titleDefenses += 1;
-                                
-                                // Update jumlah defense di history juara
                                 const lastEntryIndex = currentChampionshipHistory.map(e => e.weightClass).lastIndexOf(matchData.weightClass);
                                 if (lastEntryIndex !== -1 && currentChampionshipHistory[lastEntryIndex].championId === winner.id) {
                                     currentChampionshipHistory[lastEntryIndex].defenses += 1;
                                 }
                             } else {
                                 winner.titleWins += 1;
-                                
-                                // Catat sejarah perpindahan sabuk juara baru
                                 currentChampionshipHistory.push({
                                     id: generateId(),
                                     weightClass: matchData.weightClass,
@@ -622,36 +541,42 @@
                                     eventName: evt.name,
                                     defenses: 0
                                 });
+                                
+                                // Juara Lama Tergeser ke Rank #1
+                                const oldChampId = currentChamps[matchData.weightClass];
+                                currentChamps[matchData.weightClass] = winner.id;
+                                if (oldChampId) {
+                                    let tempRanks = [...(currentRanks[matchData.weightClass] || [])];
+                                    tempRanks = tempRanks.filter(id => id !== winner.id); // Hapus juara baru dari ranks
+                                    tempRanks.unshift(oldChampId); // Masukkan mantan juara ke posisi teratas
+                                    currentRanks[matchData.weightClass] = tempRanks;
+                                }
                             }
+                        } else {
+                            // --- ATURAN PENGAMBILALIHAN (TAKEOVER) KHUSUS TOP 5 ---
+                            const wc = matchData.weightClass;
+                            let tempRanks = [...(currentRanks[wc] || [])];
+                            const wIdx = tempRanks.indexOf(winner.id);
+                            const lIdx = tempRanks.indexOf(loser.id);
+
+                            const lIsTop5 = lIdx !== -1 && lIdx < 5; // Apakah yang kalah ada di Top 5?
+                            const wIsOutsideTop5 = wIdx === -1 || wIdx >= 5; // Apakah yang menang dari luar Top 5?
+
+                            if (lIsTop5 && wIsOutsideTop5) {
+                                // Pemenang luar Top 5 merampas takhta petarung Top 5
+                                tempRanks[lIdx] = winner.id;
+                                if (wIdx !== -1) tempRanks[wIdx] = loser.id; // Tukar posisi jika pemenang dari Rank 6-10
+                            } else if (lIdx !== -1 && wIdx !== -1 && wIdx > lIdx && wIdx < 5) {
+                                // Sesama Top 5 bertarung, petarung posisi lebih rendah merebut takhta
+                                tempRanks[lIdx] = winner.id;
+                                tempRanks[wIdx] = loser.id;
+                            }
+                            currentRanks[wc] = tempRanks;
                         }
 
-                        const getRankIdx = (id, wc) => {
-                            if (currentChamps[wc] === id) return -1;
-                            const idx = currentRanks[wc].indexOf(id);
-                            return idx === -1 ? 999 : idx;
-                        };
-                        
-                        const wRankIdx = getRankIdx(winner.id, matchData.weightClass);
-                        const lRankIdx = getRankIdx(loser.id, matchData.weightClass);
-
-                        let winnerMomentum = 10; 
-                        if (wRankIdx > lRankIdx) winnerMomentum += 7;
-                        else if (wRankIdx !== 999 && wRankIdx < lRankIdx) winnerMomentum += 5;
-
-                        if (result.method.includes('KO') || result.method === 'Submission') winnerMomentum += 2;
-                        if (result.method === 'Decision (Unanimous)') winnerMomentum += 1;
-
-                        let loserMomentum = -5;
-                        if (lRankIdx < wRankIdx) loserMomentum -= 1;
-                        if (wRankIdx === 999) loserMomentum -= 2;
-
                         const fightDesc = `${evt.name}${stageName ? ` (${stageName})` : ''} - ${result.method} (R${result.round} - ${result.time})`;
-                        winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc, momentumPoints: winnerMomentum });
-                        loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc, momentumPoints: loserMomentum });
-
-                        const updatedRankings = processRankings(winner, loser, matchData.weightClass, matchData.isTitleFight, currentRanks, currentChamps, currentFighters);
-                        currentChamps = updatedRankings.champs;
-                        currentRanks = updatedRankings.ranks;
+                        winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc, momentumPoints: 0 }); // momentumPoints tidak dipakai lagi, tapi biarkan array seragam
+                        loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc, momentumPoints: 0 });
 
                         return { processedMatch: { ...matchData, result, stageName }, winnerId: winner.id };
                     };
@@ -659,7 +584,6 @@
                     let simulatedMatches = [];
 
                     if (evt.type === 'Turnamen') {
-                        // 1. Eksekusi Perdelapan Final (8 Pertandingan)
                         let r16Winners = [];
                         for (const m of evt.matches) {
                             const res = executeSingleMatch(m, '16 Besar');
@@ -667,7 +591,6 @@
                             r16Winners.push(res.winnerId);
                         }
 
-                        // 2. Eksekusi Perempat Final (4 Pertandingan)
                         let qfWinners = [];
                         for (let i = 0; i < 4; i++) {
                             const m = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: r16Winners[i*2], f2Id: r16Winners[i*2+1] };
@@ -676,7 +599,6 @@
                             qfWinners.push(res.winnerId);
                         }
 
-                        // 3. Eksekusi Semi Final (2 Pertandingan)
                         let sfWinners = [];
                         for (let i = 0; i < 2; i++) {
                             const m = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: qfWinners[i*2], f2Id: qfWinners[i*2+1] };
@@ -685,12 +607,10 @@
                             sfWinners.push(res.winnerId);
                         }
 
-                        // 4. Eksekusi Grand Final (1 Pertandingan)
                         const finalMatch = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: sfWinners[0], f2Id: sfWinners[1] };
                         const finalRes = executeSingleMatch(finalMatch, 'Grand Final');
                         simulatedMatches.push(finalRes.processedMatch);
 
-                        // 5. Berikan Badge Wonderkid ke Sang Juara Turnamen
                         const champFighter = currentFighters.find(f => f.id === finalRes.winnerId);
                         if (champFighter) {
                             champFighter.badges = champFighter.badges || [];
@@ -699,14 +619,13 @@
                             }
                         }
                     } else {
-                        // Mode Acara Normal
                         for (const m of evt.matches) {
                             const res = executeSingleMatch(m, null);
                             simulatedMatches.push(res.processedMatch);
                         }
                     }
 
-                    // --- FITUR PENSIUN OTOMATIS (PHK PAKSA) ---
+                    // --- FITUR PENSIUN OTOMATIS (PHK PAKSA TERBARU) ---
                     simulatedMatches.forEach(match => {
                         const f1 = currentFighters.find(f => f.id === match.f1Id);
                         const f2 = currentFighters.find(f => f.id === match.f2Id);
@@ -724,24 +643,65 @@
                             if (last8.length === 8 && last8.every(h => h.result === 'L')) shouldRetire = true;
 
                             // Syarat batas rasio kekalahan awal
-                            if (totalFights <= 10 && losses >= 5) {
-                                shouldRetire = true;
-                            } else if (totalFights <= 15 && losses >= 8) {
-                                shouldRetire = true;
-                            } else if (totalFights <= 20 && losses >= 10) {
-                                shouldRetire = true;
-                            }
+                            if (totalFights <= 10 && losses >= 5) shouldRetire = true;
+                            else if (totalFights <= 15 && losses >= 8) shouldRetire = true;
+                            else if (totalFights <= 20 && losses >= 10) shouldRetire = true;
 
-                            // Eksekusi Pensiun & Pencopotan Posisi
                             if (shouldRetire) {
                                 fighter.isRetired = true;
                                 if (currentChamps[fighter.weightClass] === fighter.id) {
                                     currentChamps[fighter.weightClass] = null;
                                 }
-                                currentRanks[fighter.weightClass] = currentRanks[fighter.weightClass].filter(id => id !== fighter.id);
                             }
                         });
                     });
+
+                    // --- REBUILD RANKINGS (HYBRID: TAKEOVER TOP 5 + ELO TOP 6-10) ---
+                    let updatedRanks = { 'Ringan': [], 'Menengah': [], 'Berat': [] };
+                    WEIGHT_CLASSES.forEach(wc => {
+                        let currentWcRanks = currentRanks[wc] || [];
+                        let top5 = currentWcRanks.slice(0, 5); // Amankan 5 Teratas hasil Takeover
+
+                        // 1. Aturan Dropout: Tendang anggota Top 5 jika kalah 3x beruntun
+                        top5 = top5.filter(id => {
+                            const f = currentFighters.find(fighter => fighter.id === id);
+                            if (!f || f.isRetired || f.id === currentChamps[wc]) return false;
+                            
+                            const last3 = f.history.slice(-3);
+                            const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
+                            return !is3Losses;
+                        });
+
+                        // 2. Kumpulkan petarung yang memenuhi syarat untuk mengisi slot kosong (Minimal 5 laga, 3 menang)
+                        let eligiblePool = currentFighters.filter(f => {
+                            if (f.weightClass !== wc || f.isRetired || f.id === currentChamps[wc]) return false;
+                            if (top5.includes(f.id)) return false; // Jangan hitung yang sudah aman di Top 5
+                            
+                            const totalFights = f.record.wins + f.record.losses + f.record.draws;
+                            if (totalFights < 5 || f.record.wins < 3) return false;
+                            
+                            return true;
+                        });
+
+                        // 3. Urutkan sisanya murni berdasarkan ELO tertinggi
+                        eligiblePool.sort((a, b) => b.elo - a.elo);
+
+                        // 4. Isi Kekosongan Top 5 (Jika ada yang didepak/jadi juara/pensiun)
+                        while (top5.length < 5 && eligiblePool.length > 0) {
+                            const nextTopFighter = eligiblePool.shift();
+                            top5.push(nextTopFighter.id);
+                        }
+
+                        // 5. Isi Peringkat #6 hingga Tak Terbatas dengan sisa ELO tertinggi
+                        let rank6toN = [];
+                        while (eligiblePool.length > 0) {
+                            const nextFighter = eligiblePool.shift();
+                            rank6toN.push(nextFighter.id);
+                        }
+
+                        updatedRanks[wc] = [...top5, ...rank6toN];
+                    });
+                    currentRanks = updatedRanks;
 
                     let fotnMatchId = null;
                     let potnWinnerIds = [];
@@ -774,7 +734,6 @@
                     }
 
                     simulatedEvt = { ...evt, matches: simulatedMatches, isSimulated: true, bonuses: { fotnMatchId, potnWinnerIds } };
-                    
                     let nextEvents = [...prev.events.filter(e => e.id !== eventId)];
 
                     return {
@@ -874,6 +833,7 @@
                     if (sortBy === 'age') return calculateAge(a.dob, gameState.currentYear) - calculateAge(b.dob, gameState.currentYear);
                     if (sortBy === 'wins') return b.record.wins - a.record.wins;
                     if (sortBy === 'ovr') return calculateOvr(b.stats) - calculateOvr(a.stats);
+                    if (sortBy === 'elo') return b.elo - a.elo;
                     return 0;
                 });
 
@@ -906,8 +866,9 @@
                                 </select>
                                 <select className="bg-slate-900/50 border border-transparent rounded-xl px-4 py-3 text-white focus:outline-none focus:bg-slate-800 flex-1 min-w-[120px]" value={sortBy} onChange={e => setSortBy(e.target.value)}>
                                     <option value="wins">Kemenangan</option>
-                                    <option value="name">Urut Nama</option>
+                                    <option value="elo">ELO Tertinggi</option>
                                     <option value="ovr">OVR Tertinggi</option>
+                                    <option value="name">Urut Nama</option>
                                     <option value="age">Usia Termuda</option>
                                 </select>
                             </div>
@@ -920,8 +881,8 @@
                                         <tr className="bg-slate-800/80 text-slate-400 text-[11px] uppercase tracking-wider border-b border-slate-700/50">
                                             <th className="px-6 py-4 font-bold">Fighter</th>
                                             <th className="px-6 py-4 font-bold">Kelas Berat</th>
-                                            <th className="px-6 py-4 font-bold">Negara</th>
                                             <th className="px-6 py-4 font-bold text-center">Usia</th>
+                                            <th className="px-6 py-4 font-bold text-center">ELO</th>
                                             <th className="px-6 py-4 font-bold text-center">OVR</th>
                                             <th className="px-6 py-4 font-bold text-center">Rekor</th>
                                             <th className="px-6 py-4 font-bold text-right">Status</th>
@@ -944,17 +905,17 @@
                                                                     {(fighter.badges && fighter.badges.includes('Wonderkid')) && <span title="Wonderkid (Pemenang Turnamen)" className="text-purple-400 mr-1 text-sm">🌟</span>}
                                                                     {fighter.firstName} "{fighter.nickname}" {fighter.lastName}
                                                                 </p>
-                                                                <p className="text-xs text-slate-500 mt-0.5 font-medium">{fighter.style}</p>
+                                                                <p className="text-xs text-slate-500 mt-0.5 font-medium">{fighter.style} • {fighter.country}</p>
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-800 rounded-lg text-slate-300 border border-slate-700">{fighter.weightClass}</span>
                                                     </td>
-                                                    <td className="px-6 py-4 text-sm text-slate-300">
-                                                        <span className="flex items-center gap-1.5 font-medium"><i data-lucide="map-pin" className="w-3.5 h-3.5 text-slate-500"></i> {fighter.country}</span>
-                                                    </td>
                                                     <td className="px-6 py-4 text-sm text-slate-300 text-center font-medium">{age} Thn</td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className={`font-black text-indigo-300`}>{fighter.elo}</span>
+                                                    </td>
                                                     <td className="px-6 py-4 text-center">
                                                         <span className={`font-black ${getOvrColor(ovr)}`}>{ovr}</span>
                                                     </td>
@@ -1061,7 +1022,7 @@
                                                                 <div className="flex-1 text-center md:text-right w-full md:w-auto mb-4 md:mb-0">
                                                                     <p className="font-black text-xl text-white group-hover:text-red-400 transition">{f1.firstName} {f1.lastName}</p>
                                                                     <p className="text-xs text-slate-400 mt-1">
-                                                                        Usia {calculateAge(f1.dob, gameState.currentYear)} • <span className="text-emerald-400 font-bold">{f1.record.wins}-{f1.record.losses}</span>
+                                                                        ELO {f1.elo} • <span className="text-emerald-400 font-bold">{f1.record.wins}-{f1.record.losses}</span>
                                                                     </p>
                                                                 </div>
                                                                 
@@ -1073,7 +1034,7 @@
                                                                 <div className="flex-1 text-center md:text-left w-full md:w-auto">
                                                                     <p className="font-black text-xl text-white group-hover:text-blue-400 transition">{f2.firstName} {f2.lastName}</p>
                                                                     <p className="text-xs text-slate-400 mt-1">
-                                                                        Usia {calculateAge(f2.dob, gameState.currentYear)} • <span className="text-emerald-400 font-bold">{f2.record.wins}-{f2.record.losses}</span>
+                                                                        ELO {f2.elo} • <span className="text-emerald-400 font-bold">{f2.record.wins}-{f2.record.losses}</span>
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -1095,7 +1056,7 @@
                     <div className="animate-fade-in p-6 md:p-10 pb-24">
                         <div className="mb-8 pt-10 md:pt-0">
                             <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Peringkat Fighter</h2>
-                            <p className="text-slate-400 mt-1">Pantau sang juara dan penantang di tiap kelas.</p>
+                            <p className="text-slate-400 mt-1">Sistem Peringkat Murni Berdasarkan Nilai ELO Rating.</p>
                         </div>
                         
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1120,7 +1081,7 @@
                                                 {gameState.champions[wc] ? (
                                                     <>
                                                         <p className="font-black text-xl text-white leading-none mb-1">{gameState.fighters.find(f=>f.id===gameState.champions[wc]).lastName}</p>
-                                                        <p className="text-xs text-slate-400 font-semibold">{gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.wins}-{gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.losses} • OVR {calculateOvr(gameState.fighters.find(f=>f.id===gameState.champions[wc]).stats)}</p>
+                                                        <p className="text-xs text-slate-400 font-semibold">ELO {gameState.fighters.find(f=>f.id===gameState.champions[wc]).elo} • {gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.wins}-{gameState.fighters.find(f=>f.id===gameState.champions[wc]).record.losses}</p>
                                                     </>
                                                 ) : <p className="text-slate-500 italic text-sm font-semibold">Gelar Kosong</p>}
                                             </div>
@@ -1148,7 +1109,7 @@
                                                                 {(f.badges && f.badges.includes('Wonderkid')) && <span title="Wonderkid (Pemenang Turnamen)" className="text-purple-400 mr-1 text-sm">🌟</span>}
                                                                 {f.lastName}
                                                             </p>
-                                                            <span className="text-xs font-semibold text-slate-500 bg-slate-900 px-2 py-1 rounded-md">{f.record.wins}-{f.record.losses}</span>
+                                                            <span className="text-xs font-semibold text-slate-400 bg-slate-900 px-2 py-1 rounded-md border border-slate-700/50">ELO {f.elo} | <span className="text-emerald-500">{f.record.wins}-{f.record.losses}</span></span>
                                                         </div>
                                                     </div>
                                                 )
@@ -1236,13 +1197,11 @@
                     return filtered.sort(sortFn).slice(0, 10);
                 };
                 
-                const getGoatScore = (f) => (f.record.wins * 10) - (f.record.losses * 5) + (f.titleWins * 30) + (f.titleDefenses * 40);
+                const getGoatScore = (f) => (f.record.wins * 10) - (f.record.losses * 5) + (f.titleWins * 100) + (f.titleDefenses * 50) + Math.max(0, f.elo - 1000);
                 
                 const getP4PScore = (f) => {
-                    const ovr = calculateOvr(f.stats);
-                    const momentum = getFighterMomentum(f.history);
-                    const isChamp = Object.values(gameState.champions).includes(f.id) ? 50 : 0;
-                    return ovr + momentum + isChamp + (f.currentStreak * 5);
+                    const isChamp = Object.values(gameState.champions).includes(f.id) ? 100 : 0;
+                    return f.elo + isChamp + (f.currentStreak * 10);
                 };
 
                 const lists = [
@@ -1486,17 +1445,6 @@
                                 })()}
                             </div>
                         )}
-
-                        {/* Zona Berbahaya - Fitur Reset Data */}
-                        <div className="mt-12 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
-                            <div>
-                                <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
-                                <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
-                            </div>
-                            <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
-                                <i data-lucide="trash-2" className="w-5 h-5"></i> Reset Semua Data
-                            </button>
-                        </div>
                     </div>
                 );
             };
@@ -1545,7 +1493,6 @@
                         const dataStr = decodeURIComponent(escape(atob(importText.trim())));
                         const parsed = JSON.parse(dataStr);
                         if(parsed && parsed.fighters && parsed.events) {
-                            // Menambahkan properties baru jika save lama tidak memilikinya
                             setGameState({ ...parsed, championshipHistory: parsed.championshipHistory || [] });
                             showToast('Data Save berhasil dimuat!');
                             setImportText('');
@@ -1605,7 +1552,7 @@
                             <div className="mt-8 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
                                 <div>
                                     <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
-                                    <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
+                                    <p className="text-slate-400 text-sm mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
                                 </div>
                                 <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
                                     <i data-lucide="trash-2" className="w-5 h-5"></i> Reset Semua Data
@@ -1818,18 +1765,22 @@
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-3 gap-3 md:gap-5 mb-8">
-                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800">
+                    <div className="grid grid-cols-4 gap-3 md:gap-5 mb-8">
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 col-span-2 md:col-span-1">
                             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Rekor</p>
                             <p className="text-2xl md:text-3xl font-black text-emerald-400">{fighter.record.wins}-{fighter.record.losses}-{fighter.record.draws}</p>
                         </div>
-                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center">
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center col-span-2 md:col-span-1">
                             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Gaya</p>
                             <p className="text-lg font-black text-white">{fighter.style}</p>
                         </div>
-                        <div className="bg-gradient-to-b from-indigo-900/40 to-slate-900 p-4 rounded-2xl text-center border border-indigo-500/30 shadow-inner">
-                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 mb-1">Rating OVR</p>
-                            <p className="text-3xl font-black text-white">{ovr}</p>
+                        <div className="bg-gradient-to-b from-indigo-900/40 to-slate-900 p-4 rounded-2xl text-center border border-indigo-500/30 shadow-inner col-span-2 md:col-span-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 mb-1">ELO Rating</p>
+                            <p className="text-3xl font-black text-white">{fighter.elo}</p>
+                        </div>
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center col-span-2 md:col-span-1">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">OVR</p>
+                            <p className={`text-3xl font-black ${getOvrColor(ovr)}`}>{ovr}</p>
                         </div>
                     </div>
 
@@ -1872,24 +1823,40 @@
         };
 
         const AddEventModal = ({ onSubmit, defaultYear, defaultWeek, gameState }) => {
-            // Hitung waktu minimal (1 pekan setelah waktu saat ini)
-            const initialYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
-            const initialWeek = defaultWeek === 52 ? 1 : defaultWeek + 1;
+            // Mencari jadwal paling akhir yang sudah dibuat di antrean Matchmaker
+            let latestYear = defaultYear;
+            let latestWeek = defaultWeek;
+
+            if (gameState && gameState.events && gameState.events.length > 0) {
+                gameState.events.forEach(evt => {
+                    if (evt.year > latestYear || (evt.year === latestYear && evt.week > latestWeek)) {
+                        latestYear = evt.year;
+                        latestWeek = evt.week;
+                    }
+                });
+            }
+
+            // Waktu minimal selalu 1 pekan setelah acara terakhir (atau waktu saat ini jika kosong)
+            const initialYear = latestWeek === 52 ? latestYear + 1 : latestYear;
+            const initialWeek = latestWeek === 52 ? 1 : latestWeek + 1;
 
             const [type, setType] = useState('Fight Week');
             const [week, setWeek] = useState(initialWeek);
             const [year, setYear] = useState(initialYear);
             const [weightClass, setWeightClass] = useState('Ringan');
 
-            // Tentukan batas minimal input agar tidak bisa mundur
-            const minYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
-            const minWeek = parseInt(year) === defaultYear ? defaultWeek + 1 : 1;
+            // Tentukan batas minimal input agar mutlak tidak bisa mundur
+            const minYear = initialYear;
+            const minWeek = parseInt(year) === minYear ? initialWeek : 1;
 
+            // Efek auto-koreksi: Jika user mengetik manual angka yang lebih kecil dari batas, paksa kembali ke batas minimal
             useEffect(() => {
-                if (parseInt(year) === defaultYear && parseInt(week) <= defaultWeek) {
-                    setWeek(defaultWeek + 1);
+                if (parseInt(year) < minYear) {
+                    setYear(minYear);
+                } else if (parseInt(year) === minYear && parseInt(week) < minWeek) {
+                    setWeek(minWeek);
                 }
-            }, [year, defaultYear, defaultWeek, week]);
+            }, [year, week, minYear, minWeek]);
 
             const scheduledFighterIds = gameState ? gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id])) : [];
             const availableFighters = gameState ? gameState.fighters.filter(f => {
@@ -1897,6 +1864,7 @@
                 const totalFights = f.record.wins + f.record.losses + f.record.draws;
                 return totalFights <= 3;
             }) : [];
+            const canStartTournament = availableFighters.length >= 16;
 
             return (
                 <div className="p-6 md:p-8">
@@ -1917,7 +1885,7 @@
                                 <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition mb-2" value={weightClass} onChange={e=>setWeightClass(e.target.value)}>
                                     {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <p className="text-xs font-bold text-amber-400">
+                                <p className={`text-xs font-bold ${canStartTournament ? 'text-emerald-400' : 'text-red-400'}`}>
                                     Petarung Tersedia (Maks 3 Laga): {availableFighters.length} / 16
                                     <br/><span className="font-medium text-slate-400 text-[10px] mt-1 inline-block">Kekurangan slot akan diisi otomatis oleh petarung acak baru.</span>
                                 </p>
@@ -1963,15 +1931,18 @@
                 availableFighters = availableFighters.filter(f => f.id !== champId);
             }
 
+            // Urutkan dropdown secara absolut berdasarkan Juara -> Ranking -> ELO Tertinggi
             availableFighters.sort((a, b) => {
                 if (a.id === champId) return -1;
                 if (b.id === champId) return 1;
                 
                 const rankA = gameState.rankings[weightClass].indexOf(a.id);
                 const rankB = gameState.rankings[weightClass].indexOf(b.id);
-                const valA = rankA === -1 ? 999 : rankA;
-                const valB = rankB === -1 ? 999 : rankB;
-                return valA - valB;
+                const valA = rankA === -1 ? 9999 : rankA;
+                const valB = rankB === -1 ? 9999 : rankB;
+                
+                if (valA !== valB) return valA - valB;
+                return b.elo - a.elo; // Mengurutkan Unranked berdasarkan ELO
             });
 
             useEffect(() => {
@@ -1998,30 +1969,9 @@
                 return `${wins} - ${losses}`;
             };
 
-            const getMomentumText = (history) => {
-                if (!history || history.length === 0) return '➖ (Skor: 0)';
-                
-                const score = getFighterMomentum(history);
-                let streakType = null;
-                let streakCount = 0;
-                
-                for (let i = history.length - 1; i >= 0; i--) {
-                    if (streakType === null) {
-                        streakType = history[i].result;
-                        streakCount = 1;
-                    } else if (streakType === history[i].result) {
-                        streakCount++;
-                    } else {
-                        break;
-                    }
-                }
-
-                const scoreText = score > 0 ? `+${score}` : score;
-
-                if (streakType === 'W') return `${'🔥'.repeat(Math.min(3, streakCount))} (Skor: ${scoreText})`;
-                else if (streakType === 'L') return `${'🧊'.repeat(Math.min(3, streakCount))} (Skor: ${scoreText})`;
-                
-                return `➖ (Skor: ${scoreText})`;
+            const getMomentumIcons = (history) => {
+                if (!history || history.length === 0) return '➖';
+                return history.slice(-5).map(h => h.result === 'W' ? '✅' : (h.result === 'L' ? '❌' : '➖')).join('');
             };
 
             const handleSubmit = () => {
@@ -2063,7 +2013,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f2Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                    <option key={f.id} value={f.id}>{getRankText(f.id, weightClass)} {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} {f.elo} {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
@@ -2077,7 +2027,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f1Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                    <option key={f.id} value={f.id}>{getRankText(f.id, weightClass)} {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} {f.elo} {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
