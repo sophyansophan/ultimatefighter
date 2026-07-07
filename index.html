@@ -378,6 +378,11 @@
                 if (newRanksList.length < 10) {
                     let unrankedFighters = currentFighters.filter(f => {
                         if (f.weightClass !== weightClass || f.isRetired || f.id === newChamps[weightClass] || newRanksList.includes(f.id)) return false;
+                        
+                        // Syarat baru: Minimal 5 pertandingan dan minimal 3 kemenangan
+                        const totalFights = f.record.wins + f.record.losses + f.record.draws;
+                        if (totalFights < 5 || f.record.wins < 3) return false;
+
                         const last3 = f.history.slice(-3);
                         const is3Losses = last3.length === 3 && last3.every(h => h.result === 'L');
                         return !is3Losses;
@@ -470,6 +475,40 @@
                         currentRanks = updatedRankings.ranks;
 
                         return { ...match, result };
+                    });
+
+                    // --- FITUR PENSIUN OTOMATIS (PHK PAKSA) ---
+                    simulatedMatches.forEach(match => {
+                        const f1 = currentFighters.find(f => f.id === match.f1Id);
+                        const f2 = currentFighters.find(f => f.id === match.f2Id);
+                        
+                        [f1, f2].forEach(fighter => {
+                            if (!fighter || fighter.isRetired) return;
+                            
+                            const wins = fighter.record.wins;
+                            const losses = fighter.record.losses;
+                            const totalFights = wins + losses + fighter.record.draws;
+                            let shouldRetire = false;
+
+                            // Syarat rekor awal yang buruk (PHK Dini)
+                            if (totalFights === 1 && wins === 0 && losses === 1) shouldRetire = true; // Rekor 0-1
+                            if (totalFights === 2 && wins === 0 && losses === 2) shouldRetire = true; // Rekor 0-2
+                            if (totalFights === 2 && wins === 1 && losses === 1) shouldRetire = true; // Rekor 1-1
+                            if (totalFights === 4 && wins === 2 && losses === 2) shouldRetire = true; // Rekor 2-2
+
+                            // Syarat 5 kali kalah beruntun
+                            const last5 = fighter.history.slice(-5);
+                            if (last5.length === 5 && last5.every(h => h.result === 'L')) shouldRetire = true;
+
+                            // Eksekusi Pensiun & Pencopotan Posisi
+                            if (shouldRetire) {
+                                fighter.isRetired = true;
+                                if (currentChamps[fighter.weightClass] === fighter.id) {
+                                    currentChamps[fighter.weightClass] = null;
+                                }
+                                currentRanks[fighter.weightClass] = currentRanks[fighter.weightClass].filter(id => id !== fighter.id);
+                            }
+                        });
                     });
 
                     let fotnMatchId = null;
