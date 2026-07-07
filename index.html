@@ -9,6 +9,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Ult. Fighter">
     
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    
     <title>Ultimate Fighter - MMA Promoter</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -44,64 +48,27 @@
 <body>
     <div id="root"></div>
 
-    <!-- Script PWA Setup (Manifest & Service Worker Builder) -->
     <script>
-        // 1. Buat Ikon SVG Sederhana secara dinamis (Data URI)
-        const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#4f46e5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="200" fill="white">UF</text></svg>`;
-        const iconUrl = 'data:image/svg+xml;base64,' + btoa(iconSvg);
-
-        // 2. Buat file Manifest.json secara dinamis
-        const manifest = {
-            "name": "Ultimate Fighter Simulator",
-            "short_name": "Ult. Fighter",
-            "description": "MMA Promoter Simulator Game",
-            "start_url": "./",
-            "display": "standalone",
-            "background_color": "#0f172a",
-            "theme_color": "#0f172a",
-            "orientation": "portrait",
-            "icons": [
-                {
-                    "src": iconUrl,
-                    "sizes": "512x512",
-                    "type": "image/svg+xml",
-                    "purpose": "any maskable"
-                }
-            ]
-        };
-
-        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        
-        // Suntikkan manifest ke <head>
-        const linkManifest = document.createElement('link');
-        linkManifest.rel = 'manifest';
-        linkManifest.href = manifestUrl;
-        document.head.appendChild(linkManifest);
-
-        // 3. Buat Service Worker secara dinamis
-        // Service worker dasar ini hanya memberikan respons "Ok" (Cache-first atau Network-first tidak efektif karena file ini dihasilkan secara dinamis, tapi cukup untuk memenuhi syarat "Bisa Diinstal")
-        const swCode = `
-            self.addEventListener('install', (event) => {
-                self.skipWaiting();
-            });
-            self.addEventListener('activate', (event) => {
-                event.waitUntil(clients.claim());
-            });
-            self.addEventListener('fetch', (event) => {
-                // Untuk lingkungan dinamis ini, biarkan browser menangani fetch normal.
-                // Jika ingin offline penuh, kita butuh file statis asli.
-            });
-        `;
-        const swBlob = new Blob([swCode], { type: 'application/javascript' });
-        const swUrl = URL.createObjectURL(swBlob);
-
-        // Daftarkan Service Worker
+        // Mendaftarkan Service Worker Eksternal
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register(swUrl)
-                    .then(registration => console.log('PWA ServiceWorker registered', registration.scope))
-                    .catch(err => console.log('PWA ServiceWorker registration failed: ', err));
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker berhasil didaftarkan pada scope:', registration.scope);
+                        
+                        // Deteksi jika ada update Service Worker yang tersedia
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('Update baru tersedia!');
+                                    // Memaksa halaman memuat ulang secara otomatis di latar belakang untuk mendapatkan versi baru
+                                    window.location.reload(); 
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => console.log('Pendaftaran ServiceWorker gagal: ', err));
             });
         }
     </script>
