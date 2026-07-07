@@ -924,6 +924,13 @@
             };
 
             const RecordsMenu = () => {
+                const [activeSubTab, setActiveSubTab] = useState('statistik');
+                const [legendPage, setLegendPage] = useState(1);
+
+                useEffect(() => {
+                    lucide.createIcons();
+                }, [activeSubTab, legendPage]);
+
                 const allF = gameState.fighters;
                 if (allF.length === 0) return (
                     <div className="p-10 pt-20 h-full flex flex-col justify-between">
@@ -965,39 +972,140 @@
                     { t: "Pertahanan Gelar", i: "shield", c: "blue", data: getTop10((a,b) => b.titleDefenses - a.titleDefenses), s: "Kali", val: f => f.titleDefenses }
                 ];
 
+                const legends = allF.filter(f => f.record.wins >= 20).sort((a, b) => getGoatScore(b) - getGoatScore(a));
+                const legendsPerPage = 10;
+                const totalLegendPages = Math.max(1, Math.ceil(legends.length / legendsPerPage));
+                const displayedLegends = legends.slice((legendPage - 1) * legendsPerPage, legendPage * legendsPerPage);
+
                 return (
                     <div className="animate-fade-in p-6 md:p-10 pb-24">
                         <div className="mb-8 pt-10 md:pt-0">
                             <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Hall of Fame</h2>
                             <p className="text-slate-400 mt-1">Pencetak rekor dan legenda promotor.</p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                            {lists.map((l, idx) => (
-                                <div key={idx} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl flex flex-col">
-                                    <div className={`bg-${l.c}-900/30 p-5 border-b border-${l.c}-500/20 flex items-center gap-4`}>
-                                        <div className={`w-10 h-10 flex items-center justify-center bg-${l.c}-500/20 rounded-xl text-${l.c}-400 shadow-inner`}>
-                                            <i data-lucide={l.i} className="w-5 h-5"></i>
-                                        </div>
-                                        <h3 className={`font-black text-lg text-white`}>{l.t}</h3>
-                                    </div>
-                                    <div className="p-0 flex-1">
-                                        {l.data.filter(f => l.showAll || l.val(f) > 0).length === 0 ? (
-                                            <p className="text-slate-500 text-sm font-semibold text-center py-10">Belum ada rekor tercetak.</p>
-                                        ) : (
-                                            l.data.map((f, i) => (l.showAll || l.val(f) > 0) && (
-                                                <div key={i} className="flex justify-between items-center p-4 border-b border-slate-800/50 hover:bg-slate-800/80 transition cursor-pointer group" onClick={() => setModal({type: 'fighterDetail', data: f})}>
-                                                    <div className="flex items-center gap-4">
-                                                        <span className="font-black text-slate-600 w-5 text-right">{i+1}.</span>
-                                                        <span className={`font-bold transition ${f.isRetired ? 'text-slate-500 line-through' : 'text-slate-300 group-hover:text-white'}`}>{f.lastName}</span>
-                                                    </div>
-                                                    <span className={`font-black text-${l.c}-400 bg-${l.c}-900/20 px-3 py-1 rounded-lg`}>{l.val(f)} <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider ml-1">{l.s}</span></span>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
+
+                        {/* Sub-menu Tabs */}
+                        <div className="flex gap-2 mb-8 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 w-full md:w-auto md:inline-flex overflow-x-auto custom-scrollbar">
+                            <button onClick={() => setActiveSubTab('statistik')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all whitespace-nowrap ${activeSubTab === 'statistik' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>
+                                <i data-lucide="bar-chart-2" className="w-4 h-4 inline mr-2 -mt-0.5"></i>Statistik Rekor
+                            </button>
+                            <button onClick={() => {setActiveSubTab('legenda'); setLegendPage(1);}} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all whitespace-nowrap ${activeSubTab === 'legenda' ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+                                <i data-lucide="star" className="w-4 h-4 inline mr-2 -mt-0.5"></i>Daftar Legenda
+                            </button>
                         </div>
+
+                        {activeSubTab === 'statistik' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-fade-in">
+                                {lists.map((l, idx) => (
+                                    <div key={idx} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl flex flex-col">
+                                        <div className={`bg-${l.c}-900/30 p-5 border-b border-${l.c}-500/20 flex items-center gap-4`}>
+                                            <div className={`w-10 h-10 flex items-center justify-center bg-${l.c}-500/20 rounded-xl text-${l.c}-400 shadow-inner`}>
+                                                <i data-lucide={l.i} className="w-5 h-5"></i>
+                                            </div>
+                                            <h3 className={`font-black text-lg text-white`}>{l.t}</h3>
+                                        </div>
+                                        <div className="p-0 flex-1">
+                                            {l.data.filter(f => l.showAll || l.val(f) > 0).length === 0 ? (
+                                                <p className="text-slate-500 text-sm font-semibold text-center py-10">Belum ada rekor tercetak.</p>
+                                            ) : (
+                                                l.data.map((f, i) => (l.showAll || l.val(f) > 0) && (
+                                                    <div key={i} className="flex justify-between items-center p-4 border-b border-slate-800/50 hover:bg-slate-800/80 transition cursor-pointer group" onClick={() => setModal({type: 'fighterDetail', data: f})}>
+                                                        <div className="flex items-center gap-4">
+                                                            <span className="font-black text-slate-600 w-5 text-right">{i+1}.</span>
+                                                            <span className={`font-bold transition ${f.isRetired ? 'text-slate-500 line-through' : 'text-slate-300 group-hover:text-white'}`}>{f.lastName}</span>
+                                                        </div>
+                                                        <span className={`font-black text-${l.c}-400 bg-${l.c}-900/20 px-3 py-1 rounded-lg`}>{l.val(f)} <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider ml-1">{l.s}</span></span>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {activeSubTab === 'legenda' && (
+                            <div className="animate-fade-in space-y-4">
+                                {legends.length === 0 ? (
+                                    <div className="p-16 glass-panel rounded-3xl border border-amber-900/50 border-dashed text-center bg-amber-950/10">
+                                        <i data-lucide="shield-question" className="w-12 h-12 mx-auto text-amber-600/50 mb-4"></i>
+                                        <h3 className="text-xl font-bold text-amber-500 mb-2">Belum Ada Legenda</h3>
+                                        <p className="text-slate-400">Petarung harus mencapai minimum <b className="text-white">20 Kemenangan</b> untuk dianugerahi status Legenda.</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex flex-col gap-4">
+                                            {displayedLegends.map((f, i) => {
+                                                const currentRank = (legendPage - 1) * legendsPerPage + i + 1;
+                                                return (
+                                                <div key={f.id} onClick={() => setModal({type: 'fighterDetail', data: f})} className="relative p-5 md:p-6 rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-900/40 via-slate-900 to-slate-900 cursor-pointer hover:from-amber-900/60 transition group overflow-hidden shadow-xl flex flex-col md:flex-row items-start md:items-center gap-5">
+                                                    <div className="absolute right-0 top-0 bottom-0 w-48 bg-gradient-to-l from-amber-500/10 to-transparent pointer-events-none group-hover:from-amber-500/20 transition"></div>
+                                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.03] transform rotate-12 pointer-events-none">
+                                                        <i data-lucide="award" className="w-32 h-32 text-amber-500"></i>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center gap-4 md:gap-6 z-10 w-full md:w-auto">
+                                                        <div className="text-2xl font-black text-amber-500/30 min-w-[30px] text-right">
+                                                            #{currentRank}
+                                                        </div>
+                                                        <div className="w-16 h-16 shrink-0 rounded-2xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center font-black text-2xl text-slate-900 shadow-[0_0_15px_rgba(245,158,11,0.3)] border border-amber-300">
+                                                            {getInitials(f.firstName, f.lastName)}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex-1 z-10">
+                                                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-slate-950 text-amber-400 rounded border border-amber-500/30 shadow-inner">
+                                                                {f.weightClass}
+                                                            </span>
+                                                            {(f.titleWins > 0 || f.titleDefenses > 0) && (
+                                                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-yellow-600/20 text-yellow-500 border border-yellow-500/40 rounded flex items-center gap-1">👑 Mantan Juara</span>
+                                                            )}
+                                                            {f.isRetired && <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-red-900/50 text-red-400 rounded border border-red-900/50">Pensiun</span>}
+                                                        </div>
+                                                        <h3 className="font-black text-xl md:text-2xl text-white group-hover:text-amber-400 transition">
+                                                            {f.firstName} <span className="text-amber-500/70">"{f.nickname}"</span> {f.lastName}
+                                                        </h3>
+                                                        <p className="text-slate-400 text-sm mt-1 flex items-center gap-4 font-semibold">
+                                                            <span className="text-emerald-400"><i data-lucide="swords" className="w-3.5 h-3.5 inline mr-1"></i>Rekor: {f.record.wins}-{f.record.losses}-{f.record.draws}</span>
+                                                            <span className="text-amber-500"><i data-lucide="crown" className="w-3.5 h-3.5 inline mr-1"></i>{f.titleWins + f.titleDefenses}x Gelar</span>
+                                                            <span className="text-slate-300 hidden sm:inline"><i data-lucide="map-pin" className="w-3.5 h-3.5 inline mr-1"></i>{f.country}</span>
+                                                        </p>
+                                                    </div>
+                                                    
+                                                    <div className="text-left md:text-right bg-slate-950/50 p-3 rounded-xl border border-slate-800 z-10 w-full md:w-auto mt-4 md:mt-0 shadow-inner">
+                                                        <p className="text-[10px] uppercase font-bold tracking-widest text-amber-500/70 mb-0.5">Skor G.O.A.T</p>
+                                                        <p className="text-2xl font-black text-white">{getGoatScore(f)}</p>
+                                                    </div>
+                                                </div>
+                                            )})}
+                                        </div>
+                                        
+                                        {totalLegendPages > 1 && (
+                                            <div className="flex justify-center items-center gap-4 mt-8">
+                                                <button 
+                                                    onClick={() => setLegendPage(p => Math.max(1, p - 1))}
+                                                    disabled={legendPage === 1}
+                                                    className="p-2 rounded-xl bg-slate-800 text-white disabled:opacity-30 hover:bg-slate-700 transition border border-slate-700"
+                                                >
+                                                    <i data-lucide="chevron-left" className="w-5 h-5"></i>
+                                                </button>
+                                                <span className="font-bold text-slate-400 text-sm bg-slate-800/50 px-4 py-2 rounded-xl border border-slate-700/50">
+                                                    Hal {legendPage} dari {totalLegendPages}
+                                                </span>
+                                                <button 
+                                                    onClick={() => setLegendPage(p => Math.min(totalLegendPages, p + 1))}
+                                                    disabled={legendPage === totalLegendPages}
+                                                    className="p-2 rounded-xl bg-slate-800 text-white disabled:opacity-30 hover:bg-slate-700 transition border border-slate-700"
+                                                >
+                                                    <i data-lucide="chevron-right" className="w-5 h-5"></i>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
 
                         {/* Zona Berbahaya - Fitur Reset Data */}
                         <div className="mt-12 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
