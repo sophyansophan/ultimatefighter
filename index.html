@@ -663,7 +663,10 @@
                                                                 {getInitials(fighter.firstName, fighter.lastName)}
                                                             </div>
                                                             <div>
-                                                                <p className="font-bold text-white group-hover:text-indigo-400 transition-colors">{fighter.firstName} "{fighter.nickname}" {fighter.lastName}</p>
+                                                                <p className="font-bold text-white group-hover:text-indigo-400 transition-colors">
+                                                                    {(fighter.titleWins > 0 || fighter.titleDefenses > 0) && <span title="Pernah Meraih Gelar Juara" className="text-amber-400 mr-1 text-sm">👑</span>}
+                                                                    {fighter.firstName} "{fighter.nickname}" {fighter.lastName}
+                                                                </p>
                                                                 <p className="text-xs text-slate-500 mt-0.5 font-medium">{fighter.style}</p>
                                                             </div>
                                                         </div>
@@ -1182,6 +1185,7 @@
                                     <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-slate-800 rounded-lg border border-slate-700">{fighter.weightClass}</span>
                                     {rankDisplay === 'Champion' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg flex items-center gap-1"><i data-lucide="crown" className="w-3 h-3"></i> Champion</span> :
                                      rankDisplay !== 'Unranked' && rankDisplay !== 'Retired' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-indigo-900/40 text-indigo-300 border border-indigo-500/30 rounded-lg">{rankDisplay}</span> : null}
+                                    {(fighter.titleWins > 0 || fighter.titleDefenses > 0) && rankDisplay !== 'Champion' && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-yellow-600/20 text-yellow-500 border border-yellow-500/40 rounded-lg flex items-center gap-1 shadow-inner">👑 Mantan Juara</span>}
                                     {fighter.isRetired && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-red-900/50 text-red-400 rounded-lg border border-red-900/50">Pensiun</span>}
                                 </div>
                                 <h2 className="text-3xl md:text-4xl font-black leading-none text-white tracking-tight">{fighter.firstName} <span className="text-indigo-400">"{fighter.nickname}"</span> {fighter.lastName}</h2>
@@ -1416,7 +1420,21 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f2Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        <div className="flex items-center justify-center py-2 md:py-0 z-10">
+                            <span className="font-black text-slate-600 px-3 text-xl italic">VS</span>
+                        </div>
+
+                        <div className="flex-1 z-10">
+                            <label className="block text-[10px] font-black uppercase tracking-wider text-blue-500 mb-2 text-center md:text-right">Sudut Biru</label>
+                            <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
+                                <option value="">Pilih Petarung...</option>
+                                {availableFighters.filter(f=>f.id !== f1Id).map(f => (
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
                                 ))}
                             </select>
                         </div>
