@@ -271,10 +271,54 @@
             };
 
             const addEvent = (eventData) => {
-                const newEvent = { id: generateId(), ...eventData, matches: [], name: '' };
-                setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
-                setModal(null);
-                showToast('Jadwal acara berhasil dibuat!');
+                if (eventData.type === 'Turnamen') {
+                    const wc = eventData.weightClass;
+                    const scheduledFighterIds = gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
+                    const availableFighters = gameState.fighters.filter(f => {
+                        if (f.isRetired || f.weightClass !== wc || scheduledFighterIds.includes(f.id)) return false;
+                        const totalFights = f.record.wins + f.record.losses + f.record.draws;
+                        return totalFights <= 3;
+                    });
+                    
+                    if (availableFighters.length < 16) {
+                        showToast(`Gagal: Butuh 16 petarung (Maks 3 Laga). Tersedia: ${availableFighters.length}`, 'error');
+                        return;
+                    }
+                    
+                    // Acak urutan petarung agar bagan turnamen fair
+                    const shuffled = availableFighters.sort(() => 0.5 - Math.random()).slice(0, 16);
+                    const matches = [];
+                    // Masukkan 8 pertandingan awal (16 Besar) untuk ditampilkan di Card Jadwal
+                    for(let i = 0; i < 8; i++) {
+                        matches.push({
+                            id: generateId(),
+                            weightClass: wc,
+                            isTitleFight: false,
+                            f1Id: shuffled[i*2].id,
+                            f2Id: shuffled[i*2+1].id,
+                            result: null,
+                            isTournamentMatch: true
+                        });
+                    }
+                    
+                    const newEvent = {
+                        id: generateId(),
+                        type: 'Turnamen',
+                        name: `Turnamen Kejuaraan ${wc}`,
+                        week: eventData.week,
+                        year: eventData.year,
+                        matches: matches,
+                        tournament: { weightClass: wc }
+                    };
+                    setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
+                    setModal(null);
+                    showToast('Turnamen 16 Besar berhasil dijadwalkan!');
+                } else {
+                    const newEvent = { id: generateId(), ...eventData, matches: [], name: '' };
+                    setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
+                    setModal(null);
+                    showToast('Jadwal acara berhasil dibuat!');
+                }
             };
 
             const deleteEvent = (eventId) => {
@@ -424,11 +468,12 @@
                     let currentChamps = { ...prev.champions };
                     let currentRanks = { ...prev.rankings };
 
-                    const simulatedMatches = evt.matches.map(match => {
-                        const f1 = currentFighters.find(f => f.id === match.f1Id);
-                        const f2 = currentFighters.find(f => f.id === match.f2Id);
+                    // Fungsi Helper Internal untuk memproses 1 pertandingan
+                    const executeSingleMatch = (matchData, stageName) => {
+                        const f1 = currentFighters.find(f => f.id === matchData.f1Id);
+                        const f2 = currentFighters.find(f => f.id === matchData.f2Id);
                         
-                        const result = match.manualResult ? match.manualResult : simulateMatch(f1, f2, match.isTitleFight);
+                        const result = matchData.manualResult ? matchData.manualResult : simulateMatch(f1, f2, matchData.isTitleFight);
                         
                         const winner = result.winnerId === f1.id ? f1 : f2;
                         const loser = result.winnerId === f1.id ? f2 : f1;
@@ -438,8 +483,28 @@
                         loser.record.losses += 1;
                         loser.currentStreak = 0;
 
-                        if (match.isTitleFight) {
-                            if (currentChamps[match.weightClass] === winner.id) {
+                        // --- FITUR PERKEMBANGAN ATRIBUT DINAMIS ---
+                        const applyStatChange = (stats, isWin) => {
+                            const newStats = { ...stats };
+                            ['striking', 'grappling', 'stamina', 'power'].forEach(attr => {
+                                if (isWin) {
+                                    // Menang: Naik 2% (minimal 1 poin), maksimal stat 100
+                                    const increase = Math.max(1, Math.round(stats[attr] * 0.02));
+                                    newStats[attr] = Math.min(100, stats[attr] + increase);
+                                } else {
+                                    // Kalah: Turun 1% (minimal 1 poin), minimal stat 1
+                                    const decrease = Math.max(1, Math.round(stats[attr] * 0.01));
+                                    newStats[attr] = Math.max(1, stats[attr] - decrease);
+                                }
+                            });
+                            return newStats;
+                        };
+
+                        winner.stats = applyStatChange(winner.stats, true);
+                        loser.stats = applyStatChange(loser.stats, false);
+
+                        if (matchData.isTitleFight) {
+                            if (currentChamps[matchData.weightClass] === winner.id) {
                                 winner.titleDefenses += 1;
                             } else {
                                 winner.titleWins += 1;
@@ -452,8 +517,8 @@
                             return idx === -1 ? 999 : idx;
                         };
                         
-                        const wRankIdx = getRankIdx(winner.id, match.weightClass);
-                        const lRankIdx = getRankIdx(loser.id, match.weightClass);
+                        const wRankIdx = getRankIdx(winner.id, matchData.weightClass);
+                        const lRankIdx = getRankIdx(loser.id, matchData.weightClass);
 
                         let winnerMomentum = 10; 
                         if (wRankIdx > lRankIdx) winnerMomentum += 7;
@@ -466,16 +531,66 @@
                         if (lRankIdx < wRankIdx) loserMomentum -= 1;
                         if (wRankIdx === 999) loserMomentum -= 2;
 
-                        const fightDesc = `${evt.name} - ${result.method} (R${result.round} - ${result.time})`;
+                        const fightDesc = `${evt.name}${stageName ? ` (${stageName})` : ''} - ${result.method} (R${result.round} - ${result.time})`;
                         winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc, momentumPoints: winnerMomentum });
                         loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc, momentumPoints: loserMomentum });
 
-                        const updatedRankings = processRankings(winner, loser, match.weightClass, match.isTitleFight, currentRanks, currentChamps, currentFighters);
+                        const updatedRankings = processRankings(winner, loser, matchData.weightClass, matchData.isTitleFight, currentRanks, currentChamps, currentFighters);
                         currentChamps = updatedRankings.champs;
                         currentRanks = updatedRankings.ranks;
 
-                        return { ...match, result };
-                    });
+                        return { processedMatch: { ...matchData, result, stageName }, winnerId: winner.id };
+                    };
+
+                    let simulatedMatches = [];
+
+                    if (evt.type === 'Turnamen') {
+                        // 1. Eksekusi Perdelapan Final (8 Pertandingan)
+                        let r16Winners = [];
+                        for (const m of evt.matches) {
+                            const res = executeSingleMatch(m, '16 Besar');
+                            simulatedMatches.push(res.processedMatch);
+                            r16Winners.push(res.winnerId);
+                        }
+
+                        // 2. Eksekusi Perempat Final (4 Pertandingan)
+                        let qfWinners = [];
+                        for (let i = 0; i < 4; i++) {
+                            const m = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: r16Winners[i*2], f2Id: r16Winners[i*2+1] };
+                            const res = executeSingleMatch(m, 'Perempat Final');
+                            simulatedMatches.push(res.processedMatch);
+                            qfWinners.push(res.winnerId);
+                        }
+
+                        // 3. Eksekusi Semi Final (2 Pertandingan)
+                        let sfWinners = [];
+                        for (let i = 0; i < 2; i++) {
+                            const m = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: qfWinners[i*2], f2Id: qfWinners[i*2+1] };
+                            const res = executeSingleMatch(m, 'Semi Final');
+                            simulatedMatches.push(res.processedMatch);
+                            sfWinners.push(res.winnerId);
+                        }
+
+                        // 4. Eksekusi Grand Final (1 Pertandingan)
+                        const finalMatch = { id: generateId(), weightClass: evt.tournament.weightClass, isTitleFight: false, f1Id: sfWinners[0], f2Id: sfWinners[1] };
+                        const finalRes = executeSingleMatch(finalMatch, 'Grand Final');
+                        simulatedMatches.push(finalRes.processedMatch);
+
+                        // 5. Berikan Badge Wonderkid ke Sang Juara Turnamen
+                        const champFighter = currentFighters.find(f => f.id === finalRes.winnerId);
+                        if (champFighter) {
+                            champFighter.badges = champFighter.badges || [];
+                            if (!champFighter.badges.includes('Wonderkid')) {
+                                champFighter.badges.push('Wonderkid');
+                            }
+                        }
+                    } else {
+                        // Mode Acara Normal
+                        for (const m of evt.matches) {
+                            const res = executeSingleMatch(m, null);
+                            simulatedMatches.push(res.processedMatch);
+                        }
+                    }
 
                     // --- FITUR PENSIUN OTOMATIS (PHK PAKSA) ---
                     simulatedMatches.forEach(match => {
@@ -548,7 +663,7 @@
                         fighters: currentFighters,
                         champions: currentChamps,
                         rankings: currentRanks,
-                        events: prev.events.filter(e => e.id !== eventId),
+                        events: prev.events.filter(e => e.id !== eventId), // Acara langsung dihapus dari jadwal setelah selesai
                         history: [simulatedEvt, ...prev.history],
                         currentWeek: evt.week === 52 ? 1 : evt.week + 1,
                         currentYear: evt.week === 52 ? evt.year + 1 : evt.year,
@@ -789,9 +904,11 @@
                                                 <h3 className="text-2xl font-black text-white">{evt.name || 'Acara Belum Memiliki Main Event'}</h3>
                                             </div>
                                             <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                                                <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
-                                                    <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
-                                                </button>
+                                                {evt.type !== 'Turnamen' && (
+                                                    <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
+                                                        <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
+                                                    </button>
+                                                )}
                                                 <button onClick={() => simulateEvent(evt.id)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-500/20 transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
                                                     <i data-lucide="play" className="w-4 h-4"></i> Simulasi
                                                 </button>
@@ -811,8 +928,9 @@
                                                         const f2 = gameState.fighters.find(f => f.id === m.f2Id);
                                                         return (
                                                             <div key={m.id} className="relative flex flex-col md:flex-row items-center justify-between bg-slate-800/40 p-4 md:p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 transition group">
-                                                                {idx === 0 && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-red-500">MAIN EVENT</div>}
+                                                                {idx === 0 && evt.type !== 'Turnamen' && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-red-500">MAIN EVENT</div>}
                                                                 {m.isTitleFight && idx !== 0 && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-slate-900 text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-amber-400">TITLE FIGHT</div>}
+                                                                {evt.type === 'Turnamen' && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg tracking-widest border border-purple-500">BABAK 16 BESAR</div>}
                                                                 
                                                                 <div className="flex-1 text-center md:text-right w-full md:w-auto mb-4 md:mb-0">
                                                                     <p className="font-black text-xl text-white group-hover:text-red-400 transition">{f1.firstName} {f1.lastName}</p>
@@ -1267,7 +1385,7 @@
                             {modal.type === 'addFighter' && <AddFighterModal onSubmit={addFighter} currentYear={gameState.currentYear} />}
                             {modal.type === 'editFighter' && <AddFighterModal initialData={modal.data} onSubmit={editFighter} currentYear={gameState.currentYear} isEdit={true} />}
                             {modal.type === 'fighterDetail' && <FighterDetailModal fighter={modal.data} onRetire={retireFighter} onEdit={() => setModal({type: 'editFighter', data: modal.data})} currentYear={gameState.currentYear} gameState={gameState} />}
-                            {modal.type === 'addEvent' && <AddEventModal onSubmit={addEvent} defaultYear={gameState.currentYear} defaultWeek={gameState.currentWeek} />}
+                            {modal.type === 'addEvent' && <AddEventModal onSubmit={addEvent} defaultYear={gameState.currentYear} defaultWeek={gameState.currentWeek} gameState={gameState} />}
                             {modal.type === 'addMatch' && <AddMatchModal eventId={modal.data} onSubmit={addMatch} gameState={gameState} />}
                             {modal.type === 'eventResult' && <EventResultModal event={modal.data} gameState={gameState} />}
                             
@@ -1509,7 +1627,7 @@
             );
         };
 
-        const AddEventModal = ({ onSubmit, defaultYear, defaultWeek }) => {
+        const AddEventModal = ({ onSubmit, defaultYear, defaultWeek, gameState }) => {
             // Hitung waktu minimal (1 pekan setelah waktu saat ini)
             const initialYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
             const initialWeek = defaultWeek === 52 ? 1 : defaultWeek + 1;
@@ -1517,6 +1635,7 @@
             const [type, setType] = useState('Fight Week');
             const [week, setWeek] = useState(initialWeek);
             const [year, setYear] = useState(initialYear);
+            const [weightClass, setWeightClass] = useState('Ringan');
 
             // Tentukan batas minimal input agar tidak bisa mundur
             const minYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
@@ -1530,17 +1649,39 @@
                 }
             }, [year, defaultYear, defaultWeek, week]);
 
+            const scheduledFighterIds = gameState ? gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id])) : [];
+            const availableFighters = gameState ? gameState.fighters.filter(f => {
+                if (f.isRetired || f.weightClass !== weightClass || scheduledFighterIds.includes(f.id)) return false;
+                const totalFights = f.record.wins + f.record.losses + f.record.draws;
+                return totalFights <= 3;
+            }) : [];
+            const canStartTournament = availableFighters.length >= 16;
+
             return (
                 <div className="p-6 md:p-8">
                     <h2 className="text-2xl font-black mb-6 text-white">Jadwalkan Acara Baru</h2>
-                    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ type, week: parseInt(week), year: parseInt(year) }); }} className="space-y-5">
+                    <form onSubmit={(e) => { e.preventDefault(); onSubmit({ type, week: parseInt(week), year: parseInt(year), weightClass }); }} className="space-y-5">
                         <div>
                             <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Jenis Acara</label>
                             <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition" value={type} onChange={e=>setType(e.target.value)}>
                                 <option value="Fight Week">Fight Week (Regular)</option>
                                 <option value="PPV">Pay-Per-View (PPV)</option>
+                                <option value="Turnamen">Turnamen (Sistem Gugur 16 Petarung)</option>
                             </select>
                         </div>
+                        
+                        {type === 'Turnamen' && (
+                            <div className="p-4 bg-purple-900/20 border border-purple-500/30 rounded-xl animate-fade-in">
+                                <label className="block text-[11px] font-black uppercase tracking-wider text-purple-400 mb-2">Pilih Kelas Untuk Turnamen</label>
+                                <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition mb-2" value={weightClass} onChange={e=>setWeightClass(e.target.value)}>
+                                    {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <p className={`text-xs font-bold ${canStartTournament ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    Petarung Tersedia (Maks 3 Laga): {availableFighters.length} / 16
+                                </p>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Pekan Ke-</label>
@@ -1552,7 +1693,7 @@
                                 <input type="number" min={minYear} required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={year} onChange={e=>setYear(e.target.value)} />
                             </div>
                         </div>
-                        <button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
+                        <button type="submit" disabled={type === 'Turnamen' && !canStartTournament} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
                     </form>
                 </div>
             );
@@ -1782,7 +1923,8 @@
                                 <div className={`absolute top-0 right-0 w-32 h-32 rounded-bl-full pointer-events-none ${isFotn ? 'bg-orange-500/10' : 'bg-emerald-500/5'}`}></div>
                                 <div className="flex-1 z-10 w-full">
                                     <div className="flex flex-wrap items-center gap-2 mb-2">
-                                        {i === 0 && <span className="text-[10px] font-black bg-red-600/20 text-red-400 px-2.5 py-0.5 rounded border border-red-500/30 tracking-wider">MAIN EVENT</span>}
+                                        {i === 0 && event.type !== 'Turnamen' && <span className="text-[10px] font-black bg-red-600/20 text-red-400 px-2.5 py-0.5 rounded border border-red-500/30 tracking-wider">MAIN EVENT</span>}
+                                        {m.stageName && <span className="text-[10px] font-black bg-purple-600/20 text-purple-400 px-2.5 py-0.5 rounded border border-purple-500/30 tracking-wider shadow-inner">{m.stageName.toUpperCase()}</span>}
                                         <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded uppercase tracking-wider">{m.weightClass}</span>
                                         {m.isTitleFight && <span className="text-[10px] font-black text-amber-400 bg-amber-900/30 px-2.5 py-0.5 rounded tracking-widest border border-amber-500/30">TITLE BOUT</span>}
                                         {isFotn && <span className="text-[10px] font-black text-orange-400 bg-orange-900/30 px-2.5 py-0.5 rounded tracking-widest border border-orange-500/30 flex items-center gap-1"><i data-lucide="flame" className="w-3 h-3"></i> FOTN</span>}
