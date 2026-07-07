@@ -100,6 +100,16 @@
 
         const getInitials = (first, last) => `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
 
+        const getNextDate = (y, w, add) => {
+            let newW = w + add;
+            let newY = y;
+            while(newW > 52) {
+                newW -= 52;
+                newY += 1;
+            }
+            return { year: newY, week: newW };
+        };
+
         const getFighterMomentum = (history) => {
             if (!history || history.length === 0) return 0;
             const last5 = history.slice(-5);
@@ -130,7 +140,8 @@
                     titleWins: 0,
                     titleDefenses: 0,
                     currentStreak: 0,
-                    history: []
+                    history: [],
+                    badges: []
                 };
             }
             return {
@@ -141,7 +152,8 @@
                 titleWins: 0,
                 titleDefenses: 0,
                 currentStreak: 0,
-                history: []
+                history: [],
+                badges: []
             };
         };
 
@@ -187,7 +199,9 @@
                 const savedData = localStorage.getItem('uf_save_data');
                 if (savedData) {
                     try {
-                        return JSON.parse(savedData);
+                        const parsed = JSON.parse(savedData);
+                        // Pastikan property baru ada untuk save lama
+                        return { ...parsed, championshipHistory: parsed.championshipHistory || [] };
                     } catch (e) {
                         console.error('Data tersimpan korup. Memulai ulang permainan baru.', e);
                     }
@@ -200,6 +214,7 @@
                     fighters: [],
                     events: [],
                     history: [],
+                    championshipHistory: [],
                     champions: { 'Ringan': null, 'Menengah': null, 'Berat': null },
                     rankings: { 'Ringan': [], 'Menengah': [], 'Berat': [] } 
                 };
@@ -558,6 +573,7 @@
                     let currentFighters = JSON.parse(JSON.stringify(prev.fighters));
                     let currentChamps = { ...prev.champions };
                     let currentRanks = { ...prev.rankings };
+                    let currentChampionshipHistory = [...(prev.championshipHistory || [])];
 
                     // Fungsi Helper Internal untuk memproses 1 pertandingan
                     const executeSingleMatch = (matchData, stageName) => {
@@ -597,8 +613,25 @@
                         if (matchData.isTitleFight) {
                             if (currentChamps[matchData.weightClass] === winner.id) {
                                 winner.titleDefenses += 1;
+                                
+                                // Update jumlah defense di history juara
+                                const lastEntryIndex = currentChampionshipHistory.map(e => e.weightClass).lastIndexOf(matchData.weightClass);
+                                if (lastEntryIndex !== -1 && currentChampionshipHistory[lastEntryIndex].championId === winner.id) {
+                                    currentChampionshipHistory[lastEntryIndex].defenses += 1;
+                                }
                             } else {
                                 winner.titleWins += 1;
+                                
+                                // Catat sejarah perpindahan sabuk juara baru
+                                currentChampionshipHistory.push({
+                                    id: generateId(),
+                                    weightClass: matchData.weightClass,
+                                    championId: winner.id,
+                                    wonFromId: currentChamps[matchData.weightClass],
+                                    date: `W${evt.week}-${evt.year}`,
+                                    eventName: evt.name,
+                                    defenses: 0
+                                });
                             }
                         }
 
@@ -749,12 +782,15 @@
 
                     simulatedEvt = { ...evt, matches: simulatedMatches, isSimulated: true, bonuses: { fotnMatchId, potnWinnerIds } };
                     
+                    let nextEvents = [...prev.events.filter(e => e.id !== eventId)];
+
                     return {
                         ...prev,
                         fighters: currentFighters,
                         champions: currentChamps,
                         rankings: currentRanks,
-                        events: prev.events.filter(e => e.id !== eventId), // Acara langsung dihapus dari jadwal setelah selesai
+                        championshipHistory: currentChampionshipHistory,
+                        events: nextEvents,
                         history: [simulatedEvt, ...prev.history],
                         currentWeek: evt.week === 52 ? 1 : evt.week + 1,
                         currentYear: evt.week === 52 ? evt.year + 1 : evt.year,
@@ -912,6 +948,7 @@
                                                             <div>
                                                                 <p className="font-bold text-white group-hover:text-indigo-400 transition-colors">
                                                                     {(fighter.titleWins > 0 || fighter.titleDefenses > 0) && <span title="Pernah Meraih Gelar Juara" className="text-amber-400 mr-1 text-sm">👑</span>}
+                                                                    {(fighter.badges && fighter.badges.includes('Wonderkid')) && <span title="Wonderkid (Pemenang Turnamen)" className="text-purple-400 mr-1 text-sm">🌟</span>}
                                                                     {fighter.firstName} "{fighter.nickname}" {fighter.lastName}
                                                                 </p>
                                                                 <p className="text-xs text-slate-500 mt-0.5 font-medium">{fighter.style}</p>
@@ -985,7 +1022,7 @@
                                         <div className="bg-slate-800/80 p-5 md:p-6 border-b border-slate-700/50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center pl-8">
                                             <div>
                                                 <div className="flex items-center gap-3 mb-2">
-                                                    <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg ${evt.type === 'PPV' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
+                                                    <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg ${evt.type === 'PPV' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : evt.type === 'Turnamen' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
                                                         {evt.type}
                                                     </span>
                                                     <span className="text-slate-400 text-sm font-semibold flex items-center gap-1">
@@ -1187,13 +1224,14 @@
             const RecordsMenu = () => {
                 const [activeSubTab, setActiveSubTab] = useState('statistik');
                 const [legendPage, setLegendPage] = useState(1);
+                const [juaraPages, setJuaraPages] = useState({ 'Ringan': 1, 'Menengah': 1, 'Berat': 1 });
 
                 useEffect(() => {
                     lucide.createIcons();
-                }, [activeSubTab, legendPage]);
+                }, [activeSubTab, legendPage, juaraPages]);
 
                 const allF = gameState.fighters;
-                if (allF.length === 0) return (
+                if (allF.length === 0 && (!gameState.championshipHistory || gameState.championshipHistory.length === 0)) return (
                     <div className="p-10 pt-20 h-full flex flex-col justify-between">
                         <p className="text-slate-500">Belum ada data petarung untuk kalkulasi rekor.</p>
                     </div>
@@ -1242,6 +1280,9 @@
                             </button>
                             <button onClick={() => {setActiveSubTab('legenda'); setLegendPage(1);}} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all whitespace-nowrap ${activeSubTab === 'legenda' ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
                                 <i data-lucide="star" className="w-4 h-4 inline mr-2 -mt-0.5"></i>Daftar Legenda
+                            </button>
+                            <button onClick={() => setActiveSubTab('juara')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg font-bold text-sm transition-all whitespace-nowrap ${activeSubTab === 'juara' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}>
+                                <i data-lucide="history" className="w-4 h-4 inline mr-2 -mt-0.5"></i>Daftar Juara
                             </button>
                         </div>
 
@@ -1357,6 +1398,98 @@
                                 )}
                             </div>
                         )}
+
+                        {activeSubTab === 'juara' && (
+                            <div className="space-y-8 animate-fade-in">
+                                {WEIGHT_CLASSES.map(wc => {
+                                    const fullLineage = (gameState.championshipHistory || []).filter(h => h.weightClass === wc).slice().reverse();
+                                    const itemsPerPage = 10;
+                                    const totalPages = Math.max(1, Math.ceil(fullLineage.length / itemsPerPage));
+                                    const currentPage = juaraPages[wc] || 1;
+                                    const displayedLineage = fullLineage.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+                                    return (
+                                        <div key={wc} className="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 shadow-xl">
+                                            <div className="bg-gradient-to-r from-amber-900/60 to-slate-900 p-5 border-b border-amber-500/30">
+                                                <h3 className="font-black text-2xl text-white flex items-center gap-2"><i data-lucide="crown" className="w-6 h-6 text-amber-400"></i> Silsilah Juara {wc}</h3>
+                                            </div>
+                                            <div className="p-0">
+                                                {fullLineage.length === 0 ? (
+                                                    <p className="text-slate-500 text-sm text-center py-8">Belum ada sejarah perebutan gelar yang tercatat.</p>
+                                                ) : (
+                                                    <div className="flex flex-col">
+                                                        {displayedLineage.map((entry, idx) => {
+                                                            const actualIndex = (currentPage - 1) * itemsPerPage + idx;
+                                                            const champ = gameState.fighters.find(f => f.id === entry.championId);
+                                                            const prevChamp = entry.wonFromId ? gameState.fighters.find(f => f.id === entry.wonFromId) : null;
+                                                            return (
+                                                                <div key={entry.id} className="p-5 border-b border-slate-800/50 flex flex-col md:flex-row gap-4 items-start md:items-center hover:bg-slate-800/50 transition relative">
+                                                                    <div className="absolute left-10 md:left-11 top-0 bottom-0 w-0.5 bg-slate-800 hidden md:block z-0"></div>
+                                                                    
+                                                                    <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 z-10 shrink-0 font-black text-lg">
+                                                                        #{fullLineage.length - actualIndex}
+                                                                    </div>
+                                                                    
+                                                                    <div className="flex-1 z-10">
+                                                                        <h4 className="text-xl font-black text-white">{champ ? `${champ.firstName} "${champ.nickname}" ${champ.lastName}` : 'Petarung Pensiun/Tidak Dikenal'}</h4>
+                                                                        <p className="text-sm text-slate-400 mt-1.5 flex flex-wrap gap-x-5 gap-y-2">
+                                                                            <span className="flex items-center gap-1"><i data-lucide="calendar" className="w-3.5 h-3.5 text-slate-500"></i> {entry.date}</span>
+                                                                            <span className="flex items-center gap-1"><i data-lucide="map-pin" className="w-3.5 h-3.5 text-slate-500"></i> {entry.eventName}</span>
+                                                                            {prevChamp ? 
+                                                                                <span className="flex items-center gap-1"><i data-lucide="swords" className="w-3.5 h-3.5 text-red-400"></i> Menang dari: {prevChamp.lastName}</span> 
+                                                                                : <span className="flex items-center gap-1"><i data-lucide="award" className="w-3.5 h-3.5 text-amber-400"></i> Gelar Kosong (Vacant)</span>
+                                                                            }
+                                                                        </p>
+                                                                    </div>
+                                                                    
+                                                                    <div className="text-left md:text-right bg-slate-900/50 p-3 rounded-xl border border-slate-800 z-10 w-full md:w-auto mt-2 md:mt-0 shadow-inner">
+                                                                        <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500 mb-0.5">Pertahanan Gelar</p>
+                                                                        <p className="text-2xl font-black text-emerald-400">{entry.defenses}x</p>
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                )}
+                                                
+                                                {totalPages > 1 && (
+                                                    <div className="flex justify-center items-center gap-4 p-5 bg-slate-900/40">
+                                                        <button 
+                                                            onClick={() => setJuaraPages(prev => ({...prev, [wc]: Math.max(1, currentPage - 1)}))}
+                                                            disabled={currentPage === 1}
+                                                            className="p-2 rounded-xl bg-slate-800 text-white disabled:opacity-30 hover:bg-slate-700 transition border border-slate-700"
+                                                        >
+                                                            <i data-lucide="chevron-left" className="w-5 h-5"></i>
+                                                        </button>
+                                                        <span className="font-bold text-slate-400 text-sm bg-slate-800/50 px-4 py-2 rounded-xl border border-slate-700/50">
+                                                            Hal {currentPage} dari {totalPages}
+                                                        </span>
+                                                        <button 
+                                                            onClick={() => setJuaraPages(prev => ({...prev, [wc]: Math.min(totalPages, currentPage + 1)}))}
+                                                            disabled={currentPage === totalPages}
+                                                            className="p-2 rounded-xl bg-slate-800 text-white disabled:opacity-30 hover:bg-slate-700 transition border border-slate-700"
+                                                        >
+                                                            <i data-lucide="chevron-right" className="w-5 h-5"></i>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+
+                        {/* Zona Berbahaya - Fitur Reset Data */}
+                        <div className="mt-12 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
+                            <div>
+                                <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
+                                <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
+                            </div>
+                            <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
+                                <i data-lucide="trash-2" className="w-5 h-5"></i> Reset Semua Data
+                            </button>
+                        </div>
                     </div>
                 );
             };
@@ -1405,7 +1538,8 @@
                         const dataStr = decodeURIComponent(escape(atob(importText.trim())));
                         const parsed = JSON.parse(dataStr);
                         if(parsed && parsed.fighters && parsed.events) {
-                            setGameState(parsed);
+                            // Menambahkan properties baru jika save lama tidak memilikinya
+                            setGameState({ ...parsed, championshipHistory: parsed.championshipHistory || [] });
                             showToast('Data Save berhasil dimuat!');
                             setImportText('');
                         } else {
@@ -1649,6 +1783,7 @@
                                     {rankDisplay === 'Champion' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg flex items-center gap-1"><i data-lucide="crown" className="w-3 h-3"></i> Champion</span> :
                                      rankDisplay !== 'Unranked' && rankDisplay !== 'Retired' ? <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-indigo-900/40 text-indigo-300 border border-indigo-500/30 rounded-lg">{rankDisplay}</span> : null}
                                     {(fighter.titleWins > 0 || fighter.titleDefenses > 0) && rankDisplay !== 'Champion' && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-yellow-600/20 text-yellow-500 border border-yellow-500/40 rounded-lg flex items-center gap-1 shadow-inner">👑 Mantan Juara</span>}
+                                    {(fighter.badges && fighter.badges.includes('Wonderkid')) && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-purple-900/40 text-purple-400 border border-purple-500/30 rounded-lg flex items-center gap-1 shadow-inner"><i data-lucide="star" className="w-3 h-3"></i> Wonderkid</span>}
                                     {fighter.isRetired && <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-red-900/50 text-red-400 rounded-lg border border-red-900/50">Pensiun</span>}
                                 </div>
                                 <h2 className="text-3xl md:text-4xl font-black leading-none text-white tracking-tight">{fighter.firstName} <span className="text-indigo-400">"{fighter.nickname}"</span> {fighter.lastName}</h2>
@@ -1743,8 +1878,6 @@
             const minYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
             const minWeek = parseInt(year) === defaultYear ? defaultWeek + 1 : 1;
 
-            // Cegah error jika user mengubah tahun secara manual ke tahun sekarang 
-            // namun pekannya masih di bawah pekan minimum
             useEffect(() => {
                 if (parseInt(year) === defaultYear && parseInt(week) <= defaultWeek) {
                     setWeek(defaultWeek + 1);
@@ -1923,7 +2056,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f2Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
                                 ))}
                             </select>
                         </div>
@@ -1937,7 +2070,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f1Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (Usia {calculateAge(f.dob, gameState.currentYear)}) | OVR: {calculateOvr(f.stats)} | Rekor: {f.record.wins}-{f.record.losses} | {getMomentumText(f.history)}</option>
                                 ))}
                             </select>
                         </div>
