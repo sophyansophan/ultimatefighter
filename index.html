@@ -405,15 +405,20 @@
                         const f1 = availableFighters[0];
                         availableFighters.splice(0, 1);
 
-                        let opponents = availableFighters.filter(f => f.weightClass === f1.weightClass);
+                        // Cari lawan valid (kelas berat sama DAN MUTLAK BELUM PERNAH BERTEMU)
+                        let opponents = availableFighters.filter(f => {
+                            if (f.weightClass !== f1.weightClass) return false; // Harus sama kelas beratnya
+                            
+                            // Cek apakah f pernah melawan f1 sebelumnya
+                            const hasFought = f1.history.some(h => h.opponentId === f.id);
+                            return !hasFought; // Hanya loloskan jika belum pernah bertemu (Head-to-head 0)
+                        });
+                        
+                        // Jika tidak ada lawan baru yang cocok, lewati petarung ini
                         if (opponents.length === 0) continue;
 
-                        opponents.sort((a, b) => {
-                            const h2hA = f1.history.filter(h => h.opponentId === a.id).length;
-                            const h2hB = f1.history.filter(h => h.opponentId === b.id).length;
-                            if (h2hA === h2hB) return 0.5 - Math.random();
-                            return h2hA - h2hB;
-                        });
+                        // Acak pilihan lawan dari daftar yang belum pernah dilawan
+                        opponents.sort(() => 0.5 - Math.random());
 
                         const f2 = opponents[0];
                         const f2Index = availableFighters.findIndex(f => f.id === f2.id);
@@ -431,7 +436,7 @@
                     }
 
                     if (newMatches.length === 0) {
-                         setTimeout(() => showToast('Tidak ada pasangan petarung yang tersedia (kelas berat tidak cocok)!', 'error'), 10);
+                         setTimeout(() => showToast('Tidak ada musuh baru (kelas tidak cocok / semua sudah saling bertemu)!', 'error'), 10);
                          return prev;
                     }
 
