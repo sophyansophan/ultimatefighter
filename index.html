@@ -280,13 +280,21 @@
                         return totalFights <= 3;
                     });
                     
-                    if (availableFighters.length < 16) {
-                        showToast(`Gagal: Butuh 16 petarung (Maks 3 Laga). Tersedia: ${availableFighters.length}`, 'error');
-                        return;
+                    let newFightersToAdd = [];
+                    let tournamentParticipants = [...availableFighters];
+                    
+                    // Jika peserta kurang, isi kekurangannya dengan petarung acak (Rookie)
+                    if (tournamentParticipants.length < 16) {
+                        const needed = 16 - tournamentParticipants.length;
+                        for (let i = 0; i < needed; i++) {
+                            const newFighter = generateFighter(wc, true, null, gameState.currentYear);
+                            newFightersToAdd.push(newFighter);
+                            tournamentParticipants.push(newFighter);
+                        }
                     }
                     
                     // Acak urutan petarung agar bagan turnamen fair
-                    const shuffled = availableFighters.sort(() => 0.5 - Math.random()).slice(0, 16);
+                    const shuffled = tournamentParticipants.sort(() => 0.5 - Math.random()).slice(0, 16);
                     const matches = [];
                     // Masukkan 8 pertandingan awal (16 Besar) untuk ditampilkan di Card Jadwal
                     for(let i = 0; i < 8; i++) {
@@ -310,9 +318,15 @@
                         matches: matches,
                         tournament: { weightClass: wc }
                     };
-                    setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
+                    
+                    // Update state gabungan untuk Event baru dan Roster Petarung baru
+                    setGameState(prev => ({ 
+                        ...prev, 
+                        fighters: [...prev.fighters, ...newFightersToAdd],
+                        events: [...prev.events, newEvent] 
+                    }));
                     setModal(null);
-                    showToast('Turnamen 16 Besar berhasil dijadwalkan!');
+                    showToast(`Turnamen 16 Besar dijadwalkan! ${newFightersToAdd.length > 0 ? `(${newFightersToAdd.length} petarung acak ditambahkan otomatis)` : ''}`);
                 } else {
                     const newEvent = { id: generateId(), ...eventData, matches: [], name: '' };
                     setGameState(prev => ({ ...prev, events: [...prev.events, newEvent] }));
@@ -1655,7 +1669,6 @@
                 const totalFights = f.record.wins + f.record.losses + f.record.draws;
                 return totalFights <= 3;
             }) : [];
-            const canStartTournament = availableFighters.length >= 16;
 
             return (
                 <div className="p-6 md:p-8">
@@ -1676,8 +1689,9 @@
                                 <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition mb-2" value={weightClass} onChange={e=>setWeightClass(e.target.value)}>
                                     {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <p className={`text-xs font-bold ${canStartTournament ? 'text-emerald-400' : 'text-red-400'}`}>
+                                <p className="text-xs font-bold text-amber-400">
                                     Petarung Tersedia (Maks 3 Laga): {availableFighters.length} / 16
+                                    <br/><span className="font-medium text-slate-400 text-[10px] mt-1 inline-block">Kekurangan slot akan diisi otomatis oleh petarung acak baru.</span>
                                 </p>
                             </div>
                         )}
@@ -1693,7 +1707,7 @@
                                 <input type="number" min={minYear} required className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-indigo-500 transition font-black" value={year} onChange={e=>setYear(e.target.value)} />
                             </div>
                         </div>
-                        <button type="submit" disabled={type === 'Turnamen' && !canStartTournament} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
+                        <button type="submit" className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-emerald-500/25 text-white text-lg transition-all tracking-wide">Buat Jadwal</button>
                     </form>
                 </div>
             );
