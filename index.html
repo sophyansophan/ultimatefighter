@@ -190,7 +190,7 @@
                 if (savedData) {
                     try {
                         const parsed = JSON.parse(savedData);
-                        // Patch: Pastikan petarung dari save lama mendapatkan field ELO
+                        // Patch save lama agar mendapat ELO
                         if (parsed.fighters) {
                             parsed.fighters = parsed.fighters.map(f => ({ ...f, elo: f.elo || 1000 }));
                         }
@@ -277,21 +277,19 @@
             };
 
             const addEvent = (eventData) => {
-                // Notifikasi error bentrok dihapus, karena form AddEventModal kini mengatur waktunya secara otomatis
-
+                // Notifikasi error bentrok dihapus, form memajukan waktu minimal secara otomatis
                 if (eventData.type === 'Turnamen') {
                     const wc = eventData.weightClass;
                     const scheduledFighterIds = gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
                     const availableFighters = gameState.fighters.filter(f => {
                         if (f.isRetired || f.weightClass !== wc || scheduledFighterIds.includes(f.id)) return false;
                         const totalFights = f.record.wins + f.record.losses + f.record.draws;
-                        return totalFights <= 3;
+                        return totalFights === 0;
                     });
                     
                     let newFightersToAdd = [];
                     let tournamentParticipants = [...availableFighters];
                     
-                    // Jika peserta kurang, isi kekurangannya dengan petarung acak (Rookie)
                     if (tournamentParticipants.length < 16) {
                         const needed = 16 - tournamentParticipants.length;
                         for (let i = 0; i < needed; i++) {
@@ -301,10 +299,8 @@
                         }
                     }
                     
-                    // Acak urutan petarung agar bagan turnamen fair
                     const shuffled = tournamentParticipants.sort(() => 0.5 - Math.random()).slice(0, 16);
                     const matches = [];
-                    // Masukkan 8 pertandingan awal (16 Besar) untuk ditampilkan di Card Jadwal
                     for(let i = 0; i < 8; i++) {
                         matches.push({
                             id: generateId(),
@@ -327,7 +323,6 @@
                         tournament: { weightClass: wc }
                     };
                     
-                    // Update state gabungan untuk Event baru dan Roster Petarung baru
                     setGameState(prev => ({ 
                         ...prev, 
                         fighters: [...prev.fighters, ...newFightersToAdd],
@@ -372,52 +367,44 @@
                 showToast('Pertandingan berhasil masuk card!');
             };
 
-            const autoFillEvent = (eventId) => {
+            const autoFillEvent = (eventId, matchCount) => {
                 setGameState(prev => {
                     const newEvents = [...prev.events];
                     const eventIndex = newEvents.findIndex(e => e.id === eventId);
                     const evt = newEvents[eventIndex];
 
-                    if (evt.type === 'Turnamen') return prev; // Turnamen sudah diurus otomatis
+                    if (evt.type === 'Turnamen') return prev; 
 
                     const scheduledFighterIds = newEvents.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id]));
-                    const championIds = Object.values(prev.champions); // Ambil semua ID juara bertahan
+                    const championIds = Object.values(prev.champions);
                     
-                    // Filter: Tidak pensiun, belum ada jadwal, DAN BUKAN juara bertahan
                     let availableFighters = prev.fighters.filter(f => 
                         !f.isRetired && 
                         !scheduledFighterIds.includes(f.id) && 
                         !championIds.includes(f.id)
                     );
 
-                    // Acak urutan awal petarung
                     availableFighters = availableFighters.sort(() => 0.5 - Math.random());
 
                     let newMatches = [];
-                    let matchesNeeded = 5 - evt.matches.length; // Maksimal 5 pertandingan per acara
+                    let matchesNeeded = matchCount === 'MAX' ? 9999 : parseInt(matchCount);
 
                     if (matchesNeeded <= 0) {
-                        setTimeout(() => showToast('Card pertandingan sudah penuh (Maks 5 laga)!', 'error'), 10);
+                        setTimeout(() => showToast('Jumlah pertandingan tidak valid!', 'error'), 10);
                         return prev;
                     }
 
                     while (availableFighters.length >= 2 && matchesNeeded > 0) {
                         const f1 = availableFighters[0];
-                        availableFighters.splice(0, 1);
+                        availableFighters.splice(0, 1); 
 
-                        // Cari lawan valid (kelas berat sama DAN MUTLAK BELUM PERNAH BERTEMU)
                         let opponents = availableFighters.filter(f => {
-                            if (f.weightClass !== f1.weightClass) return false; // Harus sama kelas beratnya
-                            
-                            // Cek apakah f pernah melawan f1 sebelumnya
+                            if (f.weightClass !== f1.weightClass) return false; 
                             const hasFought = f1.history.some(h => h.opponentId === f.id);
-                            return !hasFought; // Hanya loloskan jika belum pernah bertemu (Head-to-head 0)
+                            return !hasFought; 
                         });
                         
-                        // Jika tidak ada lawan baru yang cocok, lewati petarung ini
                         if (opponents.length === 0) continue;
-
-                        // Acak pilihan lawan dari daftar yang belum pernah dilawan
                         opponents.sort(() => 0.5 - Math.random());
 
                         const f2 = opponents[0];
@@ -455,6 +442,7 @@
                     setTimeout(() => showToast(`${newMatches.length} Pertandingan acak ditambahkan!`), 10);
                     return { ...prev, events: newEvents };
                 });
+                setModal(null);
             };
 
             const simulateEvent = (eventId) => {
@@ -465,12 +453,12 @@
                     
                     const pendingEarlier = prev.events.some(e => e.id !== eventId && (e.year < evt.year || (e.year === evt.year && e.week < evt.week)));
                     if (pendingEarlier) {
-                        showToast("Gagal: Ada acara yang dijadwalkan lebih awal!", 'error');
+                        setTimeout(() => showToast("Gagal: Ada acara yang dijadwalkan lebih awal!", 'error'), 10);
                         return prev;
                     }
 
                     if (evt.matches.length === 0) {
-                        showToast("Gagal: Card pertandingan masih kosong!", 'error');
+                        setTimeout(() => showToast("Gagal: Card pertandingan masih kosong!", 'error'), 10);
                         return prev;
                     }
 
@@ -508,7 +496,7 @@
                         const pointsGained = Math.round((basePoints * multiplier) + opponentBonus);
 
                         winner.elo += pointsGained;
-                        loser.elo = Math.max(100, loser.elo - pointsGained); // Jangan sampai minus
+                        loser.elo = Math.max(100, loser.elo - 20); // Pengurangan tetap agar tidak inflasi parah
 
                         // --- FITUR PERKEMBANGAN ATRIBUT DINAMIS ---
                         const applyStatChange = (stats, isWin) => {
@@ -552,8 +540,8 @@
                                 currentChamps[matchData.weightClass] = winner.id;
                                 if (oldChampId) {
                                     let tempRanks = [...(currentRanks[matchData.weightClass] || [])];
-                                    tempRanks = tempRanks.filter(id => id !== winner.id); // Hapus juara baru dari ranks
-                                    tempRanks.unshift(oldChampId); // Masukkan mantan juara ke posisi teratas
+                                    tempRanks = tempRanks.filter(id => id !== winner.id);
+                                    tempRanks.unshift(oldChampId);
                                     currentRanks[matchData.weightClass] = tempRanks;
                                 }
                             }
@@ -564,15 +552,13 @@
                             const wIdx = tempRanks.indexOf(winner.id);
                             const lIdx = tempRanks.indexOf(loser.id);
 
-                            const lIsTop5 = lIdx !== -1 && lIdx < 5; // Apakah yang kalah ada di Top 5?
-                            const wIsOutsideTop5 = wIdx === -1 || wIdx >= 5; // Apakah yang menang dari luar Top 5?
+                            const lIsTop5 = lIdx !== -1 && lIdx < 5;
+                            const wIsOutsideTop5 = wIdx === -1 || wIdx >= 5;
 
                             if (lIsTop5 && wIsOutsideTop5) {
-                                // Pemenang luar Top 5 merampas takhta petarung Top 5
                                 tempRanks[lIdx] = winner.id;
-                                if (wIdx !== -1) tempRanks[wIdx] = loser.id; // Tukar posisi jika pemenang dari Rank 6-10
+                                if (wIdx !== -1) tempRanks[wIdx] = loser.id;
                             } else if (lIdx !== -1 && wIdx !== -1 && wIdx > lIdx && wIdx < 5) {
-                                // Sesama Top 5 bertarung, petarung posisi lebih rendah merebut takhta
                                 tempRanks[lIdx] = winner.id;
                                 tempRanks[wIdx] = loser.id;
                             }
@@ -580,8 +566,8 @@
                         }
 
                         const fightDesc = `${evt.name}${stageName ? ` (${stageName})` : ''} - ${result.method} (R${result.round} - ${result.time})`;
-                        winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc, momentumPoints: 0 }); // momentumPoints tidak dipakai lagi, tapi biarkan array seragam
-                        loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc, momentumPoints: 0 });
+                        winner.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: loser.id, opponentName: loser.lastName, result: 'W', detail: fightDesc }); 
+                        loser.history.push({ date: `W${evt.week}-${evt.year}`, opponentId: winner.id, opponentName: winner.lastName, result: 'L', detail: fightDesc });
 
                         return { processedMatch: { ...matchData, result, stageName }, winnerId: winner.id };
                     };
@@ -630,7 +616,8 @@
                         }
                     }
 
-                    // --- FITUR PENSIUN OTOMATIS (PHK PAKSA TERBARU) ---
+                    // --- FITUR PENSIUN OTOMATIS (PHK DINI EKSKLUSIF) ---
+                    let fightersToDelete = [];
                     simulatedMatches.forEach(match => {
                         const f1 = currentFighters.find(f => f.id === match.f1Id);
                         const f2 = currentFighters.find(f => f.id === match.f2Id);
@@ -643,31 +630,43 @@
                             const totalFights = wins + losses + fighter.record.draws;
                             let shouldRetire = false;
 
-                            // Syarat 8 kali kalah beruntun
-                            const last8 = fighter.history.slice(-8);
-                            if (last8.length === 8 && last8.every(h => h.result === 'L')) shouldRetire = true;
-
-                            // Syarat batas rasio kekalahan awal
-                            if (totalFights <= 10 && losses >= 5) shouldRetire = true;
-                            else if (totalFights <= 15 && losses >= 8) shouldRetire = true;
-                            else if (totalFights <= 20 && losses >= 10) shouldRetire = true;
+                            // Syarat sadis eksklusif untuk debutan
+                            if (totalFights === 1 && wins === 0 && losses === 1) shouldRetire = true; // 0-1
+                            else if (totalFights === 2 && wins === 1 && losses === 1) shouldRetire = true; // 1-1
+                            else if (totalFights === 3 && wins === 2 && losses === 1) shouldRetire = true; // 2-1
 
                             if (shouldRetire) {
-                                fighter.isRetired = true;
                                 if (currentChamps[fighter.weightClass] === fighter.id) {
                                     currentChamps[fighter.weightClass] = null;
+                                }
+                                
+                                // Jika laga < 5, masukkan ke daftar hapus permanen. Jika >= 5, beri status pensiun.
+                                if (totalFights < 5) {
+                                    fightersToDelete.push(fighter.id);
+                                } else {
+                                    fighter.isRetired = true;
                                 }
                             }
                         });
                     });
 
-                    // --- REBUILD RANKINGS (HYBRID: TAKEOVER TOP 5 + ELO TOP 6-10) ---
+                    // Eksekusi penghapusan permanen dari Roster dan Ranking
+                    if (fightersToDelete.length > 0) {
+                        currentFighters = currentFighters.filter(f => !fightersToDelete.includes(f.id));
+                        WEIGHT_CLASSES.forEach(wc => {
+                            if (currentRanks[wc]) {
+                                currentRanks[wc] = currentRanks[wc].filter(id => !fightersToDelete.includes(id));
+                            }
+                        });
+                    }
+
+                    // --- REBUILD RANKINGS HYBRID ---
                     let updatedRanks = { 'Ringan': [], 'Menengah': [], 'Berat': [] };
                     WEIGHT_CLASSES.forEach(wc => {
                         let currentWcRanks = currentRanks[wc] || [];
-                        let top5 = currentWcRanks.slice(0, 5); // Amankan 5 Teratas hasil Takeover
+                        let top5 = currentWcRanks.slice(0, 5); 
 
-                        // 1. Aturan Dropout: Tendang anggota Top 5 jika kalah 3x beruntun
+                        // 1. Sanksi Elit: Dropout dari Top 5 jika kalah 3x beruntun
                         top5 = top5.filter(id => {
                             const f = currentFighters.find(fighter => fighter.id === id);
                             if (!f || f.isRetired || f.id === currentChamps[wc]) return false;
@@ -677,10 +676,10 @@
                             return !is3Losses;
                         });
 
-                        // 2. Kumpulkan petarung yang memenuhi syarat untuk mengisi slot kosong (Minimal 5 laga, 3 menang)
+                        // 2. Kumpulkan sisa petarung yang memenuhi syarat
                         let eligiblePool = currentFighters.filter(f => {
                             if (f.weightClass !== wc || f.isRetired || f.id === currentChamps[wc]) return false;
-                            if (top5.includes(f.id)) return false; // Jangan hitung yang sudah aman di Top 5
+                            if (top5.includes(f.id)) return false; 
                             
                             const totalFights = f.record.wins + f.record.losses + f.record.draws;
                             if (totalFights < 5 || f.record.wins < 3) return false;
@@ -691,13 +690,13 @@
                         // 3. Urutkan sisanya murni berdasarkan ELO tertinggi
                         eligiblePool.sort((a, b) => b.elo - a.elo);
 
-                        // 4. Isi Kekosongan Top 5 (Jika ada yang didepak/jadi juara/pensiun)
+                        // 4. Isi Kekosongan Top 5
                         while (top5.length < 5 && eligiblePool.length > 0) {
                             const nextTopFighter = eligiblePool.shift();
                             top5.push(nextTopFighter.id);
                         }
 
-                        // 5. Isi Peringkat #6 hingga Tak Terbatas dengan sisa ELO tertinggi
+                        // 5. Isi Peringkat 6 ke bawah dengan ELO tertinggi
                         let rank6toN = [];
                         while (eligiblePool.length > 0) {
                             const nextFighter = eligiblePool.shift();
@@ -756,8 +755,10 @@
                 });
                 
                 if(simulatedEvt) {
-                    showToast('Acara berhasil disimulasikan!');
-                    setModal({ type: 'eventResult', data: simulatedEvt });
+                    setTimeout(() => {
+                        showToast('Acara berhasil disimulasikan!');
+                        setModal({ type: 'eventResult', data: simulatedEvt });
+                    }, 100);
                 }
             };
 
@@ -996,7 +997,7 @@
                                                         <button onClick={() => setModal({ type: 'addMatch', data: evt.id })} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center">
                                                             <i data-lucide="swords" className="w-4 h-4"></i> Atur Card
                                                         </button>
-                                                        <button onClick={() => autoFillEvent(evt.id)} className="bg-cyan-700 hover:bg-cyan-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center" title="Isi jadwal otomatis memprioritaskan yang belum pernah bertemu">
+                                                        <button onClick={() => setModal({ type: 'autoFillPrompt', data: evt.id })} className="bg-cyan-700 hover:bg-cyan-600 text-white px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2 text-sm flex-1 md:flex-none justify-center" title="Isi jadwal otomatis memprioritaskan yang belum pernah bertemu">
                                                             <i data-lucide="wand-2" className="w-4 h-4"></i> Isi Acak
                                                         </button>
                                                     </>
@@ -1202,15 +1203,10 @@
                     return filtered.sort(sortFn).slice(0, 10);
                 };
                 
-                const getGoatScore = (f) => (f.record.wins * 10) - (f.record.losses * 5) + (f.titleWins * 100) + (f.titleDefenses * 50) + Math.max(0, f.elo - 1000);
-                
-                const getP4PScore = (f) => {
-                    const isChamp = Object.values(gameState.champions).includes(f.id) ? 100 : 0;
-                    return f.elo + isChamp + (f.currentStreak * 10);
-                };
+                const getGoatScore = (f) => (f.record.wins * 10) - (f.record.losses * 5) + (f.titleWins * 30) + (f.titleDefenses * 40);
 
                 const lists = [
-                    { t: "Pound-For-Pound", i: "crosshair", c: "red", data: getTop10((a,b) => getP4PScore(b) - getP4PScore(a), f => !f.isRetired && (f.record.wins > 0 || f.record.losses > 0)), s: "Pts", val: f => getP4PScore(f), showAll: true },
+                    { t: "ELO Rating Tertinggi", i: "crosshair", c: "red", data: getTop10((a,b) => b.elo - a.elo, f => !f.isRetired), s: "ELO", val: f => f.elo, showAll: true },
                     { t: "G.O.A.T", i: "star", c: "amber", data: getTop10((a,b) => getGoatScore(b) - getGoatScore(a), f => f.record.wins > 0 || f.record.losses > 0), s: "Pts", val: f => getGoatScore(f), showAll: true },
                     { t: "Total Laga Gelar", i: "crown", c: "amber", data: getTop10((a,b) => (b.titleWins + b.titleDefenses) - (a.titleWins + a.titleDefenses)), s: "Kali", val: f => f.titleWins + f.titleDefenses },
                     { t: "Laga Terbanyak", i: "swords", c: "indigo", data: getTop10((a,b) => (b.record.wins+b.record.losses) - (a.record.wins+a.record.losses)), s: "Laga", val: f => f.record.wins+f.record.losses },
@@ -1557,7 +1553,7 @@
                             <div className="mt-8 p-6 glass-panel rounded-3xl border border-red-900/50 flex flex-col sm:flex-row items-center justify-between gap-4 bg-red-950/10">
                                 <div>
                                     <h3 className="font-black text-red-400 text-lg flex items-center gap-2"><i data-lucide="alert-triangle" className="w-5 h-5"></i> Zona Berbahaya</h3>
-                                    <p className="text-slate-400 text-sm mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
+                                    <p className="text-sm text-slate-500 mt-1">Hapus seluruh data permainan (petarung, riwayat, dan sabuk) lalu mulai dari awal.</p>
                                 </div>
                                 <button onClick={() => setModal({type: 'resetConfirm'})} className="bg-red-900/40 hover:bg-red-800 text-red-400 px-6 py-3 rounded-xl font-bold transition border border-red-900/50 flex items-center gap-2 w-full sm:w-auto justify-center whitespace-nowrap">
                                     <i data-lucide="trash-2" className="w-5 h-5"></i> Reset Semua Data
@@ -1583,6 +1579,7 @@
                             {modal.type === 'addEvent' && <AddEventModal onSubmit={addEvent} defaultYear={gameState.currentYear} defaultWeek={gameState.currentWeek} gameState={gameState} />}
                             {modal.type === 'addMatch' && <AddMatchModal eventId={modal.data} onSubmit={addMatch} gameState={gameState} />}
                             {modal.type === 'eventResult' && <EventResultModal event={modal.data} gameState={gameState} />}
+                            {modal.type === 'autoFillPrompt' && <AutoFillModal eventId={modal.data} onSubmit={autoFillEvent} />}
                             
                             {modal.type === 'resetConfirm' && (
                                 <div className="p-6 md:p-10 text-center">
@@ -1625,6 +1622,46 @@
                             <i data-lucide={toast.type === 'success' ? 'check-circle' : 'alert-circle'} className="w-5 h-5"></i> {toast.msg}
                         </div>
                     )}
+                </div>
+            );
+        };
+
+        const AutoFillModal = ({ eventId, onSubmit }) => {
+            const [count, setCount] = useState(5);
+            const [isMax, setIsMax] = useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(eventId, isMax ? 'MAX' : parseInt(count));
+            };
+
+            return (
+                <div className="p-6 md:p-8">
+                    <h2 className="text-2xl font-black mb-6 text-white">Isi Acak Pertandingan</h2>
+                    <p className="text-slate-400 text-sm mb-6">Sistem akan mencari pasangan petarung yang belum pernah bertemu di atas oktagon. (Juara Bertahan Pengecualian).</p>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                            <div className="flex items-center gap-3 mb-4">
+                                <input type="checkbox" id="maxMatches" checked={isMax} onChange={e=>setIsMax(e.target.checked)} className="w-5 h-5 accent-cyan-500 rounded cursor-pointer" />
+                                <label htmlFor="maxMatches" className="font-bold text-sm tracking-wide text-cyan-300 cursor-pointer">
+                                    Maksimal (Gunakan semua petarung yang masih menganggur)
+                                </label>
+                            </div>
+                            
+                            {!isMax && (
+                                <div className="animate-fade-in pt-4 border-t border-slate-700/50 mt-4">
+                                    <label className="block text-[11px] font-black uppercase tracking-wider text-slate-400 mb-2">Jumlah Pertandingan</label>
+                                    <input type="number" min="1" max="50" required className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-white outline-none focus:border-cyan-500 transition font-black" value={count} onChange={e=>setCount(e.target.value)} />
+                                    <p className="text-[10px] text-slate-500 mt-2 italic">Tentukan berapa banyak laga acak yang ingin disuntikkan ke dalam card ini.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <button type="submit" className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-4 rounded-xl font-black mt-8 shadow-lg shadow-cyan-500/25 text-white text-lg transition-all tracking-wide flex items-center justify-center gap-2">
+                            <i data-lucide="wand-2" className="w-5 h-5"></i> Generate Acak
+                        </button>
+                    </form>
                 </div>
             );
         };
@@ -1770,27 +1807,23 @@
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-4 gap-3 md:gap-5 mb-8">
-                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 col-span-2 md:col-span-1">
+                    <div className="grid grid-cols-3 gap-3 md:gap-5 mb-8">
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800">
                             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Rekor</p>
                             <p className="text-2xl md:text-3xl font-black text-emerald-400">{fighter.record.wins}-{fighter.record.losses}-{fighter.record.draws}</p>
                         </div>
-                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center col-span-2 md:col-span-1">
+                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center">
                             <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">Gaya</p>
                             <p className="text-lg font-black text-white">{fighter.style}</p>
                         </div>
-                        <div className="bg-gradient-to-b from-indigo-900/40 to-slate-900 p-4 rounded-2xl text-center border border-indigo-500/30 shadow-inner col-span-2 md:col-span-1">
-                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 mb-1">ELO Rating</p>
+                        <div className="bg-gradient-to-b from-indigo-900/40 to-slate-900 p-4 rounded-2xl text-center border border-indigo-500/30 shadow-inner">
+                            <p className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 mb-1">Rating ELO</p>
                             <p className="text-3xl font-black text-white">{fighter.elo}</p>
-                        </div>
-                        <div className="bg-slate-900/80 p-4 rounded-2xl text-center border border-slate-800 flex flex-col justify-center col-span-2 md:col-span-1">
-                            <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-1">OVR</p>
-                            <p className={`text-3xl font-black ${getOvrColor(ovr)}`}>{ovr}</p>
                         </div>
                     </div>
 
                     <div className="mb-8">
-                        <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-400 flex items-center gap-2"><i data-lucide="activity" className="w-4 h-4 text-indigo-400"></i> Atribut Fisik & Skill</h3>
+                        <h3 className="text-sm font-black uppercase tracking-wider mb-4 text-slate-400 flex items-center gap-2"><i data-lucide="activity" className="w-4 h-4 text-indigo-400"></i> Atribut Fisik & Skill (OVR {ovr})</h3>
                         <div className="grid gap-3 bg-slate-900/50 p-5 rounded-2xl border border-slate-800">
                             {Object.entries(fighter.stats).map(([k, v]) => (
                                 <div key={k} className="flex items-center text-sm">
@@ -1828,48 +1861,29 @@
         };
 
         const AddEventModal = ({ onSubmit, defaultYear, defaultWeek, gameState }) => {
-            // Mencari jadwal paling akhir yang sudah dibuat di antrean Matchmaker
-            let latestYear = defaultYear;
-            let latestWeek = defaultWeek;
-
-            if (gameState && gameState.events && gameState.events.length > 0) {
-                gameState.events.forEach(evt => {
-                    if (evt.year > latestYear || (evt.year === latestYear && evt.week > latestWeek)) {
-                        latestYear = evt.year;
-                        latestWeek = evt.week;
-                    }
-                });
-            }
-
-            // Waktu minimal selalu 1 pekan setelah acara terakhir (atau waktu saat ini jika kosong)
-            const initialYear = latestWeek === 52 ? latestYear + 1 : latestYear;
-            const initialWeek = latestWeek === 52 ? 1 : latestWeek + 1;
+            const initialYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
+            const initialWeek = defaultWeek === 52 ? 1 : defaultWeek + 1;
 
             const [type, setType] = useState('Fight Week');
             const [week, setWeek] = useState(initialWeek);
             const [year, setYear] = useState(initialYear);
             const [weightClass, setWeightClass] = useState('Ringan');
 
-            // Tentukan batas minimal input agar mutlak tidak bisa mundur
-            const minYear = initialYear;
-            const minWeek = parseInt(year) === minYear ? initialWeek : 1;
+            const minYear = defaultWeek === 52 ? defaultYear + 1 : defaultYear;
+            const minWeek = parseInt(year) === defaultYear ? defaultWeek + 1 : 1;
 
-            // Efek auto-koreksi: Jika user mengetik manual angka yang lebih kecil dari batas, paksa kembali ke batas minimal
             useEffect(() => {
-                if (parseInt(year) < minYear) {
-                    setYear(minYear);
-                } else if (parseInt(year) === minYear && parseInt(week) < minWeek) {
-                    setWeek(minWeek);
+                if (parseInt(year) === defaultYear && parseInt(week) <= defaultWeek) {
+                    setWeek(defaultWeek + 1);
                 }
-            }, [year, week, minYear, minWeek]);
+            }, [year, defaultYear, defaultWeek, week]);
 
             const scheduledFighterIds = gameState ? gameState.events.flatMap(e => e.matches.flatMap(m => [m.f1Id, m.f2Id])) : [];
             const availableFighters = gameState ? gameState.fighters.filter(f => {
                 if (f.isRetired || f.weightClass !== weightClass || scheduledFighterIds.includes(f.id)) return false;
                 const totalFights = f.record.wins + f.record.losses + f.record.draws;
-                return totalFights <= 3;
+                return totalFights === 0;
             }) : [];
-            const canStartTournament = availableFighters.length >= 16;
 
             return (
                 <div className="p-6 md:p-8">
@@ -1890,8 +1904,8 @@
                                 <select className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition mb-2" value={weightClass} onChange={e=>setWeightClass(e.target.value)}>
                                     {WEIGHT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <p className={`text-xs font-bold ${canStartTournament ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    Petarung Tersedia (Maks 3 Laga): {availableFighters.length} / 16
+                                <p className="text-xs font-bold text-amber-400">
+                                    Petarung Tersedia (Rookie 0-0): {availableFighters.length} / 16
                                     <br/><span className="font-medium text-slate-400 text-[10px] mt-1 inline-block">Kekurangan slot akan diisi otomatis oleh petarung acak baru.</span>
                                 </p>
                             </div>
@@ -1936,7 +1950,6 @@
                 availableFighters = availableFighters.filter(f => f.id !== champId);
             }
 
-            // Urutkan dropdown secara absolut berdasarkan Juara -> Ranking -> ELO Tertinggi
             availableFighters.sort((a, b) => {
                 if (a.id === champId) return -1;
                 if (b.id === champId) return 1;
@@ -1947,7 +1960,7 @@
                 const valB = rankB === -1 ? 9999 : rankB;
                 
                 if (valA !== valB) return valA - valB;
-                return b.elo - a.elo; // Mengurutkan Unranked berdasarkan ELO
+                return b.elo - a.elo;
             });
 
             useEffect(() => {
@@ -2018,7 +2031,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f2Id).map(f => (
-                                    <option key={f.id} value={f.id}>{getRankText(f.id, weightClass)} {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} {f.elo} {getMomentumIcons(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
@@ -2032,7 +2045,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f1Id).map(f => (
-                                    <option key={f.id} value={f.id}>{getRankText(f.id, weightClass)} {(f.titleWins > 0 || f.titleDefenses > 0) ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} {f.elo} {getMomentumIcons(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
