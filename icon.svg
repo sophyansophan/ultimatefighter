@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <!-- Background -->
+    <rect width="512" height="512" fill="#4f46e5" rx="112" />
+    <!-- Gradient Overlay untuk efek premium -->
+    <rect width="512" height="512" fill="url(#grad)" rx="112" opacity="0.5" />
+    
+    <!-- Teks Inisial -->
+    <text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="240" fill="#ffffff" letter-spacing="-10">UF</text>
+
+    <!-- Definisi Gradient -->
+    <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#06b6d4;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#312e81;stop-opacity:0" />
+        </linearGradient>
+    </defs>
+</svg>
