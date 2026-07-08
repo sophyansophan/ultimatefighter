@@ -194,6 +194,8 @@
                         if (parsed.fighters) {
                             parsed.fighters = parsed.fighters.map(f => ({ ...f, elo: f.elo || 1000 }));
                         }
+                        // Patch ukuran zoom default
+                        if (parsed.uiScale === undefined) parsed.uiScale = 1;
                         return { ...parsed, championshipHistory: parsed.championshipHistory || [] };
                     } catch (e) {
                         console.error('Data tersimpan korup. Memulai ulang permainan baru.', e);
@@ -1515,18 +1517,28 @@
                         <div className="space-y-6">
                             <div className="glass-panel p-6 rounded-3xl border border-slate-700/50 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none">
-                                    <i data-lucide="upload-cloud" className="w-32 h-32 text-indigo-500"></i>
+                                    <i data-lucide="zoom-out" className="w-32 h-32 text-blue-500"></i>
                                 </div>
-                                <h3 className="font-black text-xl text-white mb-2 flex items-center gap-2 z-10 relative"><i data-lucide="upload" className="w-5 h-5 text-indigo-400"></i> Export Save Data (Simpan Data)</h3>
-                                <p className="text-slate-400 text-sm mb-6 z-10 relative">Amankan progres promotor Anda saat ini dengan membuat cadangan. Anda bisa menyalinnya sebagai teks kode atau mengunduhnya sebagai file <b>.txt</b> untuk dikirim ke HP/perangkat lain.</p>
+                                <h3 className="font-black text-xl text-white mb-2 flex items-center gap-2 z-10 relative"><i data-lucide="monitor" className="w-5 h-5 text-blue-400"></i> Skala Tampilan (Zoom)</h3>
+                                <p className="text-slate-400 text-sm mb-6 z-10 relative">Perkecil tampilan agar layar dapat memuat lebih banyak informasi. Sangat cocok jika Anda bermain di perangkat layar kecil (HP).</p>
                                 
-                                <div className="flex flex-col sm:flex-row gap-3 z-10 relative">
-                                    <button onClick={handleExportCopy} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
-                                        <i data-lucide="copy" className="w-5 h-5"></i> Salin Kode Save
-                                    </button>
-                                    <button onClick={handleExportFile} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-6 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 border border-slate-700">
-                                        <i data-lucide="download" className="w-5 h-5"></i> Download File (.txt)
-                                    </button>
+                                <div className="flex flex-wrap gap-3 z-10 relative">
+                                    {[1, 0.9, 0.8, 0.75].map(scale => (
+                                        <button 
+                                            key={scale}
+                                            onClick={() => {
+                                                setGameState(prev => ({ ...prev, uiScale: scale }));
+                                                showToast(`Ukuran tampilan diubah menjadi ${scale * 100}%`);
+                                            }}
+                                            className={`flex-1 min-w-[70px] py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 ${
+                                                (gameState.uiScale || 1) === scale 
+                                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' 
+                                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700'
+                                            }`}
+                                        >
+                                            {scale * 100}%
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
@@ -1602,8 +1614,17 @@
                 );
             };
 
+            const scale = gameState.uiScale || 1;
+            const appStyle = {
+                width: `${100 / scale}vw`,
+                height: `${100 / scale}vh`,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+                position: scale !== 1 ? 'absolute' : 'relative'
+            };
+
             return (
-                <div className="flex h-screen overflow-hidden text-slate-200">
+                <div style={appStyle} className={`flex ${scale === 1 ? 'h-screen' : ''} overflow-hidden text-slate-200`}>
                     {renderSidebar()}
                     <div className="md:ml-64 flex-1 h-full overflow-y-auto custom-scrollbar relative">
                         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'radial-gradient(#6366f1 1px, transparent 1px)', backgroundSize: '32px 32px'}}></div>
