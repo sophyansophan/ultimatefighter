@@ -2031,7 +2031,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-red-500 font-semibold text-white shadow-inner transition" value={f1Id} onChange={e=>setF1Id(e.target.value)} disabled={isTitleFight && gameState.champions[weightClass] && !scheduledFighterIds.includes(gameState.champions[weightClass])}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f2Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (OVR:{calculateOvr(f.stats)} | Usia:{calculateAge(f.dob, gameState.currentYear)}) {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
@@ -2045,7 +2045,7 @@
                             <select className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-3.5 text-sm outline-none focus:border-blue-500 font-semibold text-white shadow-inner transition" value={f2Id} onChange={e=>setF2Id(e.target.value)}>
                                 <option value="">Pilih Petarung...</option>
                                 {availableFighters.filter(f=>f.id !== f1Id).map(f => (
-                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
+                                    <option key={f.id} value={f.id}>[{getRankText(f.id, weightClass)}] {(f.titleWins > 0 || f.titleDefenses > 0) && f.id !== champId ? '👑 ' : ''}{(f.badges && f.badges.includes('Wonderkid')) ? '🌟 ' : ''}{f.lastName} (OVR:{calculateOvr(f.stats)} | Usia:{calculateAge(f.dob, gameState.currentYear)}) {f.record.wins}-{f.record.losses} | ELO {f.elo} | {getMomentumIcons(f.history)}</option>
                                 ))}
                             </select>
                         </div>
